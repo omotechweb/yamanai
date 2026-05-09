@@ -2,16 +2,27 @@ import { NextRequest } from 'next/server';
 
 export const runtime = 'edge';
 
-const SYSTEM_PROMPT = `Sen profesyonel bir teknoloji uzmani ve yazilimcisin. 
+const DEFAULT_SYSTEM_PROMPT = `Sen profesyonel bir teknoloji uzmani ve yazilimcisin.
 KURALLAR:
-1. Turkce dil bilgisi kurallarina kusursuz uy. Kelimeleri asla birlesik yazma.
+1. Turkce dil bilgisi kurallarina kusursuz uy.
 2. Karakter atlama yapma.
 3. Kod bloklarini backtick isaretleri ile eksiksiz ac ve kapat.
 4. Python'da 'BeautifulSoup' kullanirken 'from bs4 import' kalibini kullan.`;
 
+const ALLOWED_MODELS = new Set(['gpt-4o', 'gpt-4o-mini']);
+
 export async function POST(req: NextRequest) {
-  const { messages } = await req.json();
+  const body = await req.json();
+  const { messages, model: requestedModel, customSystemPrompt } = body;
   const apiKey = process.env.OPENAI_API_KEY;
+
+  // Validate model - fallback to gpt-4o if invalid
+  const model = ALLOWED_MODELS.has(requestedModel) ? requestedModel : 'gpt-4o';
+
+  // Build system prompt
+  const systemContent = customSystemPrompt
+    ? `${DEFAULT_SYSTEM_PROMPT}\n\nEK TALIMATLAR:\n${customSystemPrompt}`
+    : DEFAULT_SYSTEM_PROMPT;
 
   const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -20,8 +31,8 @@ export async function POST(req: NextRequest) {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      model,
+      messages: [{ role: 'system', content: systemContent }, ...messages],
       stream: true,
       max_tokens: 4000,
       temperature: 0,
@@ -42,10 +53,6 @@ export async function POST(req: NextRequest) {
     async start(controller) {
       const reader = openaiRes.body!.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
-
-      // Buffer holds incomplete SSE lines across TCP chunk boundaries.
-      // Without this, a line split across two chunks causes JSON.parse to fail
-      // and that token is silently dropped, causing missing characters.
       let buffer = '';
 
       const processLine = (raw: string): boolean => {
@@ -66,8 +73,7 @@ export async function POST(req: NextRequest) {
             );
           }
         } catch {
-          // Incomplete JSON line — buffer logic should prevent this,
-          // but if it happens we skip rather than corrupt the output.
+          // Incomplete JSON - buffer logic prevents this in normal flow
         }
         return false;
       };
@@ -77,17 +83,13 @@ export async function POST(req: NextRequest) {
           const { done, value } = await reader.read();
 
           if (done) {
-            // Flush decoder for any remaining multi-byte UTF-8 chars
             buffer += decoder.decode();
             if (buffer.trim()) processLine(buffer);
             break;
           }
 
-          // stream:true prevents splitting multi-byte UTF-8 chars across chunks
           buffer += decoder.decode(value, { stream: true });
 
-          // Process only complete lines (ending with \n).
-          // Incomplete last line stays in buffer and merges with next chunk.
           let newlineIdx: number;
           while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
             const line = buffer.slice(0, newlineIdx);
