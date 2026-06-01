@@ -269,11 +269,15 @@ const WelcomeScreen = memo(({ onPromptClick }: { onPromptClick: (p: string) => v
       <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500">Nasil yardimci olabilirim?</h2>
       <p className="text-gray-500 mt-2 text-sm max-w-sm">YamanAI ile kod yazabilir, ceviri yapabilir veya sadece sohbet edebilirsin.</p>
     </div>
-    <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
+    <div className="grid grid-cols-2 gap-3 w-full max-w-md">
       {SUGGESTED_PROMPTS.map(({ label, prompt }) => (
-        <button key={label} onClick={() => onPromptClick(prompt)} className="flex items-center justify-between gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 rounded-xl text-sm text-gray-300 hover:text-white transition-all group text-left">
-          <span className="font-medium">{label}</span>
-          <ChevronRight size={14} className="text-gray-600 group-hover:text-gray-400 flex-shrink-0" />
+        <button
+          key={label}
+          onClick={() => onPromptClick(prompt)}
+          className="flex items-center justify-between gap-2 px-5 py-4 bg-white/[0.06] hover:bg-white/[0.12] border border-white/20 hover:border-blue-500/50 rounded-xl text-sm text-gray-200 hover:text-white transition-all group text-left shadow-sm hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-0.5"
+        >
+          <span className="font-semibold">{label}</span>
+          <ChevronRight size={15} className="text-gray-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
         </button>
       ))}
     </div>
@@ -496,7 +500,7 @@ export default function Home() {
 
   const resetInput = useCallback(() => {
     setInput('');
-    if (inputRef.current) inputRef.current.style.height = '56px';
+    if (inputRef.current) inputRef.current.style.height = '64px';
   }, []);
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -789,11 +793,25 @@ export default function Home() {
             <span className="text-green-500">Online</span>
           </div>
           <div className="flex items-center gap-1">
-            <Link href="/sss" className={`${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`} aria-label="SSS" title="Sikca Sorulan Sorular">
+            <Link
+              href="/sss"
+              className={`group relative ${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`}
+              aria-label="SSS"
+            >
               <HelpCircle size={18} />
+              <span className="absolute top-full right-0 mt-2 px-2.5 py-1 bg-black/90 text-white text-[11px] font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 shadow-xl border border-white/10 z-50">
+                Sikca Sorulan Sorular
+              </span>
             </Link>
-            <button onClick={() => setShowSettings(true)} className={`${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`} aria-label="Ayarlar" title="Ayarlar">
+            <button
+              onClick={() => setShowSettings(true)}
+              className={`group relative ${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`}
+              aria-label="Ayarlar"
+            >
               <Settings size={18} />
+              <span className="absolute top-full right-0 mt-2 px-2.5 py-1 bg-black/90 text-white text-[11px] font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 shadow-xl border border-white/10 z-50">
+                Ayarlar
+              </span>
             </button>
           </div>
         </div>
@@ -829,23 +847,23 @@ export default function Home() {
 
         {/* Input */}
         <div className="absolute bottom-0 w-full pt-10 pb-6 px-4" style={{ background: settings.theme === 'dark' ? 'linear-gradient(to top, #212121, #212121e6, transparent)' : 'linear-gradient(to top, #f5f5f5, #f5f5f5e6, transparent)' }}>
-          <div className="max-w-3xl mx-auto">
-            <div className={`relative flex items-end ${tc.input} rounded-2xl border ${settings.theme === 'dark' ? 'border-white/10 focus-within:border-blue-500/40' : 'border-gray-300 focus-within:border-blue-500'} shadow-2xl transition-all duration-200`}>
+          <div className="max-w-4xl mx-auto">
+            <div className={`relative flex items-end ${tc.input} rounded-3xl border-2 ${settings.theme === 'dark' ? 'border-white/10 focus-within:border-blue-500/60' : 'border-gray-300 focus-within:border-blue-500'} shadow-2xl focus-within:shadow-blue-500/20 focus-within:shadow-2xl transition-all duration-300 focus-within:ring-4 focus-within:ring-blue-500/10`}>
               <textarea
                 ref={inputRef}
-                className={`w-full bg-transparent ${tc.text} p-4 pr-14 max-h-[200px] resize-none focus:outline-none placeholder-gray-500 text-[15px] leading-relaxed`}
+                className={`w-full bg-transparent ${tc.text} px-6 py-5 pr-16 max-h-[240px] resize-none focus:outline-none placeholder-gray-500 text-[15px] leading-relaxed`}
                 placeholder="YamanAI'a bir seyler sor..."
                 rows={1}
                 value={input}
                 onChange={handleInput}
                 onKeyDown={handleKeyDown}
                 aria-label="Mesaj gir"
-                style={{ minHeight: '56px' }}
+                style={{ minHeight: '64px' }}
               />
               <button
                 onClick={loading ? stopGeneration : () => sendMessage(input)}
                 disabled={!loading && !input.trim()}
-                className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all duration-200 ${
+                className={`absolute right-3 bottom-3 p-2.5 rounded-xl transition-all duration-200 ${
                   loading
                     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
                     : input.trim()
