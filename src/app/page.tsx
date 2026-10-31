@@ -1,21 +1,31 @@
 "use client";
 
 import {
-  useState, useRef, useEffect, useCallback, useMemo, memo,
+  useState, useRef, useEffect, useCallback, useMemo, memo, createContext, useContext,
 } from 'react';
 import {
-  Send, User, Bot, Plus, StopCircle, Menu, X,
-  Monitor, MonitorDown, Copy, Check, ChevronRight, ChevronDown,
-  Sparkles, Trash2, MessageSquare, Play, ExternalLink,
-  Settings, HelpCircle, Sun, Moon, Download, Type,
+  Plus, Menu, X, MonitorDown, Copy, Check, Trash2, Play, Search,
+  Settings, HelpCircle, Sun, Moon, Download, Type, LogIn, LogOut,
+  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-// @ts-ignore
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-// @ts-ignore
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
+import { useSession, signIn, signOut } from 'next-auth/react';
+import EbruPlate from '@/components/EbruPlate';
+import { LogoMark, ChatMark } from '@/components/Mark';
+import {
+  STRINGS, LS_SETTINGS, useLang, notifySettingsChanged,
+  type LangPref, type Strings,
+} from '@/lib/i18n';
+
+// Prism tum dilleri icerir ve agirdir: yalnizca kod blogu gorununce yuklenir
+const SyntaxHighlighter = dynamic(
+  // @ts-expect-error -- paket tip tanimi icermiyor
+  () => import('react-syntax-highlighter').then(m => m.Prism),
+  { ssr: false, loading: () => null },
+) as React.ComponentType<Record<string, unknown>>;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,7 +33,19 @@ export interface Message {
   id: string;
   role: 'user' | 'ai';
   text: string;
+  status?: 'stopped' | 'network' | 'rate_limited' | 'not_configured' | 'daily_limit' | 'generic';
 }
+
+interface Usage {
+  used: number;
+  limit: number;
+  guestLimit: number;
+  userLimit: number;
+  resetHours: number;
+}
+
+// Giris gerektiren ozellikler: sunucu da ayrica uygular, bu yalnizca arayuz icin
+const GateContext = createContext<{ signedIn: boolean; requireLogin: () => void }>({ signedIn: false, requireLogin: () => {} });
 
 export interface Conversation {
   id: string;
@@ -37,89 +59,228 @@ export interface AppSettings {
   fontSize: 'sm' | 'base' | 'lg';
   model: 'gpt-4o' | 'gpt-4o-mini';
   systemPrompt: string;
+  language: LangPref;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const LS_KEY      = 'yamanai_conversations';
-const LS_POPUP    = 'hasSeenDesktopPopup';
-const LS_SETTINGS = 'yamanai_settings';
+const LS_KEY        = 'yamanai_conversations';
+const LS_POPUP      = 'hasSeenDesktopPopup';
+const LS_MSG_COUNT  = 'yamanai_msg_count';
+const LS_LOGIN_SEEN = 'yamanai_login_popup_seen';
+const LOGIN_POPUP_AFTER = 3; // kac mesaj sonra login popup ciksin
+const SEARCH_AFTER  = 6;     // kac sohbetten sonra arama kutusu gorunsun
+const UNDO_MS       = 6000;
 const PREVIEW_LANGS = new Set(['html', 'css', 'javascript', 'js', 'jsx', 'tsx']);
+const DOWNLOAD_URL  = '/download/YamanAISetup.exe';
+const GUEST_MODEL   = 'gpt-4o-mini';
+const DEFAULT_GUEST_LIMIT = 10;
+const DEFAULT_USER_LIMIT  = 50;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'dark',
-  fontSize: 'sm',
+  theme: 'light',
+  fontSize: 'base',
   model: 'gpt-4o',
   systemPrompt: '',
+  language: 'auto',
 };
 
-const SUGGESTED_PROMPTS = [
-  { label: 'Kod yaz',    prompt: 'Python ile basit bir web scraper yazar misin?' },
-  { label: 'Acikla',     prompt: 'Kuantum bilgisayarlari nasil calisir?' },
-  { label: 'Cevir',      prompt: 'Su metni Ingilizceye cevir: "Merhaba dunya!"' },
-  { label: 'Fikir uret', prompt: 'Bir mobil uygulama icin 5 yaratici isim oner.' },
-];
+const FONT_SIZE_MAP   = { sm: 'text-[15px]', base: 'text-[17px]', lg: 'text-[19px]' };
+const MODEL_SHORT_MAP = { 'gpt-4o': 'GPT-4o', 'gpt-4o-mini': 'GPT-4o Mini' };
 
-const FONT_SIZE_MAP = { sm: 'text-sm', base: 'text-base', lg: 'text-lg' };
-const FONT_LABEL_MAP = { sm: 'Kucuk', base: 'Normal', lg: 'Buyuk' };
-const MODEL_LABEL_MAP = { 'gpt-4o': 'GPT-4o (Guclu)', 'gpt-4o-mini': 'GPT-4o Mini (Hizli)' };
+const TOOLTIP_CLS = 'absolute top-full right-0 mt-2 px-2.5 py-1 bg-y-bubble text-y-bubble-ink text-xs font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 pointer-events-none transition-opacity duration-150 z-50';
+const ICON_BTN = 'y-hit group inline-flex items-center justify-center size-10 rounded-full text-y-muted hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150';
+const SIDE_ICON_BTN = 'y-hit inline-flex items-center justify-center size-9 rounded-full text-y-side-muted hover:text-y-side-ink hover:bg-y-side-hover transition-colors duration-150';
+const MODAL_BACKDROP = 'y-backdrop fixed inset-0 z-[60] flex items-center justify-center bg-[#070C1E]/60 p-4';
+const MODAL_PANEL = 'y-panel relative w-full bg-y-raised text-y-ink shadow-[0_18px_50px_rgb(7_12_30_/_0.35)]';
+
+// Kod bloklari iki temada da lacivert zemin ustunde: tokenlar ebru murekkeplerinin acik tonlari
+const CODE_THEME: Record<string, React.CSSProperties> = {
+  'code[class*="language-"]': { color: '#E8E6F0' },
+  'pre[class*="language-"]': { color: '#E8E6F0' },
+  comment: { color: '#9AA6CF', fontStyle: 'italic' }, prolog: { color: '#9AA6CF' }, doctype: { color: '#9AA6CF' }, cdata: { color: '#9AA6CF' },
+  punctuation: { color: '#C4CBE4' },
+  keyword: { color: '#F2997F' }, atrule: { color: '#F2997F' }, tag: { color: '#F2997F' }, boolean: { color: '#F2997F' }, important: { color: '#F2997F' },
+  string: { color: '#EBCB7E' }, char: { color: '#EBCB7E' }, 'attr-value': { color: '#EBCB7E' }, regex: { color: '#EBCB7E' }, inserted: { color: '#EBCB7E' },
+  function: { color: '#86D6DB' }, 'class-name': { color: '#86D6DB' }, builtin: { color: '#86D6DB' }, selector: { color: '#86D6DB' },
+  number: { color: '#B7C4F5' }, constant: { color: '#B7C4F5' }, symbol: { color: '#B7C4F5' }, 'attr-name': { color: '#B7C4F5' }, property: { color: '#B7C4F5' }, variable: { color: '#E8E6F0' },
+  operator: { color: '#C4CBE4' }, deleted: { color: '#F2997F' },
+};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 
 function loadConversations(): Conversation[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'); }
-  catch { return []; }
+  try {
+    const parsed: Conversation[] = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
+    return parsed.filter(c => c.messages?.length > 0);
+  } catch { return []; }
 }
-
-function saveConversations(convs: Conversation[]) {
-  localStorage.setItem(LS_KEY, JSON.stringify(convs));
-}
-
 function loadSettings(): AppSettings {
-  if (typeof window === 'undefined') return DEFAULT_SETTINGS;
+  const system: AppSettings['theme'] = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
-    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SETTINGS;
-  } catch { return DEFAULT_SETTINGS; }
+    return raw ? { ...DEFAULT_SETTINGS, theme: system, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS, theme: system };
+  } catch { return { ...DEFAULT_SETTINGS, theme: system }; }
 }
-
-function saveSettings(s: AppSettings) {
-  localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
-}
-
 function groupByDate(convs: Conversation[]) {
-  const now = Date.now();
-  const DAY = 86_400_000;
+  const start = new Date(); start.setHours(0, 0, 0, 0);
+  const todayStart = start.getTime();
+  const yesterdayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1).getTime();
   return {
-    today:     convs.filter(c => now - c.updatedAt < DAY),
-    yesterday: convs.filter(c => now - c.updatedAt >= DAY && now - c.updatedAt < 2 * DAY),
-    older:     convs.filter(c => now - c.updatedAt >= 2 * DAY),
+    today:     convs.filter(c => c.updatedAt >= todayStart),
+    yesterday: convs.filter(c => c.updatedAt >= yesterdayStart && c.updatedAt < todayStart),
+    older:     convs.filter(c => c.updatedAt < yesterdayStart),
   };
 }
-
-// ─── Theme helpers ───────────────────────────────────────────────────────────
-
-function themeClasses(theme: 'dark' | 'light') {
-  return theme === 'dark'
-    ? { bg: 'bg-[#212121]', sidebar: 'bg-[#171717]', input: 'bg-[#2f2f2f]', text: 'text-gray-100', textMuted: 'text-gray-400', border: 'border-gray-800', msgAlt: 'bg-white/[0.03]' }
-    : { bg: 'bg-[#f5f5f5]', sidebar: 'bg-white', input: 'bg-white', text: 'text-gray-900', textMuted: 'text-gray-500', border: 'border-gray-200', msgAlt: 'bg-gray-100' };
+function toUsage(data: Omit<Usage, 'resetHours'> & { resetAt: number }): Usage {
+  return {
+    used: data.used, limit: data.limit, guestLimit: data.guestLimit, userLimit: data.userLimit,
+    resetHours: Math.max(1, Math.ceil((data.resetAt - Date.now()) / 3_600_000)),
+  };
 }
+/** Builds a sandboxed page that compiles and mounts a React component in the browser. */
+function reactPreviewDoc(code: string) {
+  const name = /export\s+default\s+function\s+(\w+)/.exec(code)?.[1]
+    ?? /export\s+default\s+(\w+)\s*;?/.exec(code)?.[1]
+    ?? /(?:function|const)\s+([A-Z]\w*)/.exec(code)?.[1];
+  const source = code
+    .replace(/^\s*import\s[\s\S]*?['"][^'"]+['"];?\s*$/gm, '')
+    .replace(/export\s+default\s+function/, 'function')
+    .replace(/export\s+default\s+\w+\s*;?/, '')
+    .replace(/^\s*export\s+/gm, '')
+    .replace(/<\/script/gi, '<\\/script');
+  const mount = name ? `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(${name}));` : '';
+  return `<!doctype html><html><body style="margin:0;font-family:sans-serif"><div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"><\/script>
+<script type="text/plain" id="src">const {useState,useEffect,useRef,useMemo,useCallback,useReducer,useContext,createContext}=React;
+${source}
+${mount}<\/script>
+<script>try{(0,eval)(Babel.transform(document.getElementById('src').textContent,{filename:'preview.tsx',presets:['typescript','react']}).code)}catch(e){document.body.innerHTML='<pre style="color:#A8281A;padding:1rem;white-space:pre-wrap"></pre>';document.querySelector('pre').textContent=String(e)}<\/script>
+</body></html>`;
+}
+function offersDesktopApp() {
+  const ua = navigator.userAgent;
+  return /Windows/.test(ua) && !/Electron/.test(ua) && !/Mobile/.test(ua);
+}
+
+/** Moves focus into a dialog, keeps Tab inside it, and restores focus on close. */
+function useDialogFocus<T extends HTMLElement>() {
+  const ref = useRef<T>(null);
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const focusables = () => [...root.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),textarea,input,iframe')];
+    root.tabIndex = -1;
+    root.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const list = focusables();
+      if (!list.length) return;
+      const first = list[0], last = list[list.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    root.addEventListener('keydown', onKey);
+    return () => { root.removeEventListener('keydown', onKey); previous?.focus?.(); };
+  }, []);
+  return ref;
+}
+
+// ─── LoginPopup ──────────────────────────────────────────────────────────────
+
+const LoginPopup = memo(({ onClose, t, guestLimit, userLimit }: { onClose: () => void; t: Strings; guestLimit: number; userLimit: number }) => {
+  const ref = useDialogFocus<HTMLDivElement>();
+  return (
+    <div className={MODAL_BACKDROP} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="login-title" className={`${MODAL_PANEL} max-w-sm rounded-2xl p-7`}>
+        <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} absolute top-3 right-3 size-8`}><X size={18} /></button>
+        <LogoMark size={36} className="mb-4" />
+        <h2 id="login-title" className="text-xl font-bold tracking-tight mb-2 pr-6 text-balance">{t.loginTitle}</h2>
+        <ul className="mb-6 space-y-2">
+          {t.loginBenefits(guestLimit, userLimit).map(benefit => (
+            <li key={benefit} className="flex items-start gap-2.5 text-y-muted leading-snug">
+              <Check size={16} className="mt-0.5 flex-shrink-0 text-y-link" /> {benefit}
+            </li>
+          ))}
+        </ul>
+        <div className="space-y-2.5">
+          <button
+            onClick={() => signIn('google', { callbackUrl: '/' })}
+            className="w-full min-h-12 flex items-center gap-3 px-5 bg-white hover:bg-gray-50 text-gray-800 font-semibold rounded-full border border-gray-300 transition-colors duration-150"
+          >
+            <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            <span className="flex-1 text-left">{t.google}</span>
+          </button>
+          <button
+            onClick={() => signIn('github', { callbackUrl: '/' })}
+            className="w-full min-h-12 flex items-center gap-3 px-5 bg-[#24292f] hover:bg-[#2f363d] text-white font-semibold rounded-full border border-[#444d56] transition-colors duration-150"
+          >
+            <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+            </svg>
+            <span className="flex-1 text-left">{t.github}</span>
+          </button>
+          <button onClick={onClose} className="w-full min-h-11 text-sm font-medium text-y-muted hover:text-y-ink rounded-full transition-colors duration-150">
+            {t.later}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+LoginPopup.displayName = 'LoginPopup';
+
+// ─── DesktopPopup ────────────────────────────────────────────────────────────
+
+const DesktopPopup = memo(({ onClose, t }: { onClose: () => void; t: Strings }) => {
+  const ref = useDialogFocus<HTMLDivElement>();
+  return (
+    <div className={MODAL_BACKDROP} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="desktop-title" className={`${MODAL_PANEL} max-w-md rounded-2xl p-7`}>
+        <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} absolute top-3 right-3 size-8`}><X size={18} /></button>
+        <h2 id="desktop-title" className="text-xl font-bold tracking-tight mb-2 pr-6">{t.desktopTitle}</h2>
+        <p className="text-y-muted mb-6 leading-relaxed">{t.desktopBody}</p>
+        <div className="flex flex-col gap-1">
+          <a href={DOWNLOAD_URL} download
+            className="w-full min-h-12 px-5 bg-y-accent hover:bg-y-accent-hover text-white font-semibold rounded-full transition-colors duration-150 flex items-center justify-center gap-2">
+            <MonitorDown size={18} /> {t.desktopDownload}
+          </a>
+          <button onClick={onClose} className="min-h-11 text-sm font-medium text-y-muted hover:text-y-ink rounded-full transition-colors duration-150">{t.desktopLater}</button>
+        </div>
+      </div>
+    </div>
+  );
+});
+DesktopPopup.displayName = 'DesktopPopup';
 
 // ─── CopyButton ──────────────────────────────────────────────────────────────
 
-const CopyButton = memo(({ text }: { text: string }) => {
+const CopyButton = memo(({ text, showLabel = true, className = '', t }: {
+  text: string; showLabel?: boolean; className?: string; t: Strings;
+}) => {
   const [copied, setCopied] = useState(false);
   const handle = useCallback(async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }
     catch {}
   }, [text]);
   return (
-    <button onClick={handle} className="flex items-center gap-1 text-gray-500 hover:text-gray-200 transition-colors text-[10px] uppercase tracking-widest font-bold" aria-label="Kodu kopyala">
-      {copied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-      {copied ? 'Kopyalandi' : 'Kopyala'}
+    <button type="button" onClick={handle} title={t.copy} aria-label={copied ? t.copied : t.copy}
+      className={`y-hit inline-flex items-center justify-center gap-1.5 transition-colors duration-150 ${className}`}>
+      <span className="relative size-3.5 flex-shrink-0">
+        <Copy size={14} className={`absolute inset-0 transition-opacity duration-150 ${copied ? 'opacity-0' : 'opacity-100'}`} />
+        <Check size={14} className={`absolute inset-0 transition-opacity duration-150 ${copied ? 'opacity-100' : 'opacity-0'}`} />
+      </span>
+      {showLabel && <span className="hidden sm:inline" aria-hidden="true">{copied ? t.copied : t.copy}</span>}
     </button>
   );
 });
@@ -127,32 +288,42 @@ CopyButton.displayName = 'CopyButton';
 
 // ─── LivePreviewModal ─────────────────────────────────────────────────────────
 
-const LivePreviewModal = memo(({ code, lang, onClose }: {
-  code: string; lang: string; onClose: () => void;
-}) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+const LivePreviewModal = memo(({ code, lang, onClose, t }: { code: string; lang: string; onClose: () => void; t: Strings }) => {
+  const ref = useDialogFocus<HTMLDivElement>();
   const srcDoc = useMemo(() => {
     const l = lang.toLowerCase();
-    if (l === 'css') return `<html><head><style>${code}</style></head><body style="background:#1a1a1a;padding:2rem"><p style="font-family:sans-serif;color:#888">CSS onizleme</p></body></html>`;
-    if (l === 'javascript' || l === 'js') return `<html><body style="background:#111;color:#eee;font-family:monospace;padding:1rem"><script>${code}<\/script></body></html>`;
+    if (l === 'css') return `<html><head><style>${code}</style></head><body style="background:#fff;padding:2rem"><p style="font-family:sans-serif;color:#555">${t.cssPreview}</p></body></html>`;
+    if (l === 'javascript' || l === 'js') return `<html><body style="background:#fff;color:#111;font-family:monospace;padding:1rem"><script>${code}<\/script></body></html>`;
+    if (l === 'jsx' || l === 'tsx') return reactPreviewDoc(code);
     return code;
-  }, [code, lang]);
-  useEffect(() => { if (iframeRef.current) iframeRef.current.srcdoc = srcDoc; }, [srcDoc]);
+  }, [code, lang, t.cssPreview]);
+  const download = useCallback(() => {
+    const url = URL.createObjectURL(new Blob([srcDoc], { type: 'text/html' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = 'yamanai-preview.html'; a.click();
+    URL.revokeObjectURL(url);
+  }, [srcDoc]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); onClose(); } };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
   return (
-    <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="relative w-full max-w-4xl h-[80vh] bg-[#111] border border-gray-700 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1a1a1a] border-b border-white/10 flex-shrink-0">
-          <div className="flex items-center gap-2 text-sm text-gray-300">
-            <Play size={14} className="text-green-400" />
-            <span className="font-semibold">Canli Onizleme</span>
-            <span className="text-[10px] uppercase tracking-widest text-gray-600 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">{lang}</span>
+    <div className="y-backdrop fixed inset-0 z-[60] flex items-center justify-center bg-[#070C1E]/70 p-0 md:p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={t.livePreview}
+        className={`${MODAL_PANEL} max-w-4xl md:w-[90vw] h-dvh md:h-[80vh] rounded-none md:rounded-2xl overflow-hidden flex flex-col`}>
+        <div className="flex items-center justify-between h-12 pl-4 pr-2 border-b border-y-line flex-shrink-0">
+          <div className="flex items-center gap-2 text-sm min-w-0">
+            <span className="font-semibold">{t.livePreview}</span>
+            <span className="font-mono text-xs text-y-muted">{lang}</span>
           </div>
           <div className="flex items-center gap-1">
-            <a href={`data:text/html;charset=utf-8,${encodeURIComponent(srcDoc)}`} target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors" title="Yeni sekmede ac"><ExternalLink size={15} /></a>
-            <button onClick={onClose} className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors" aria-label="Kapat"><X size={17} /></button>
+            <button onClick={download} aria-label={t.saveHtml} title={t.saveHtml} className={`${ICON_BTN} size-9`}><Download size={16} /></button>
+            <button onClick={onClose} aria-label={t.close} title={t.close} className={`${ICON_BTN} size-9`}><X size={17} /></button>
           </div>
         </div>
-        <iframe ref={iframeRef} sandbox="allow-scripts allow-same-origin allow-modals" className="flex-1 w-full bg-white" title="Canli Onizleme" />
+        {/* allow-same-origin bilerek yok: uretilen kod sohbetlere (localStorage) erisemesin */}
+        <iframe srcDoc={srcDoc} sandbox="allow-scripts allow-modals" className="flex-1 w-full bg-white" title={t.livePreview} />
       </div>
     </div>
   );
@@ -161,27 +332,32 @@ LivePreviewModal.displayName = 'LivePreviewModal';
 
 // ─── CodeBlock ───────────────────────────────────────────────────────────────
 
-const CodeBlock = memo(({ language, children }: { language: string; children: React.ReactNode }) => {
+const CodeBlock = memo(({ language, children, t }: { language: string; children: React.ReactNode; t: Strings }) => {
   const [preview, setPreview] = useState(false);
+  const { signedIn, requireLogin } = useContext(GateContext);
   const canPreview = PREVIEW_LANGS.has(language.toLowerCase());
   const code = String(children ?? '').replace(/\n$/, '');
+  const headerBtn = 'h-7 px-2 rounded-md text-xs font-medium hover:bg-white/10';
   return (
     <>
-      {preview && <LivePreviewModal code={code} lang={language.toLowerCase()} onClose={() => setPreview(false)} />}
-      <div className="rounded-xl overflow-hidden my-5 border border-white/10 shadow-2xl">
-        <div className="bg-[#1a1a1a] px-4 py-2 flex justify-between items-center border-b border-white/5">
-          <span className="text-[10px] uppercase tracking-widest text-gray-500 font-bold">{language || 'text'}</span>
-          <div className="flex items-center gap-3">
+      {preview && <LivePreviewModal code={code} lang={language.toLowerCase()} onClose={() => setPreview(false)} t={t} />}
+      <div className="y-code rounded-xl overflow-hidden my-4 not-prose">
+        <div className="h-10 pl-4 pr-2 flex justify-between items-center gap-2 border-b border-white/10">
+          <span className="font-mono text-xs lowercase text-[#C4CBE4] truncate">{language || 'text'}</span>
+          <div className="flex items-center gap-1.5">
             {canPreview && (
-              <button onClick={() => setPreview(true)} className="flex items-center gap-1 text-[10px] uppercase tracking-widest font-bold text-blue-400 hover:text-blue-300 transition-colors">
-                <Play size={11} /> Canli Onizleme
+              <button type="button" onClick={() => (signedIn ? setPreview(true) : requireLogin())}
+                aria-label={signedIn ? t.preview : `${t.preview} (${t.requiresLogin})`} title={signedIn ? t.preview : t.requiresLogin}
+                className={`y-hit inline-flex items-center gap-1.5 text-[#EBCB7E] transition-colors duration-150 ${headerBtn}`}>
+                {signedIn ? <Play size={13} /> : <Lock size={13} />}<span className="hidden sm:inline" aria-hidden="true">{t.preview}</span>
               </button>
             )}
-            <CopyButton text={code} />
+            <CopyButton text={code} t={t} className={`text-[#C4CBE4] hover:text-white ${headerBtn}`} />
           </div>
         </div>
-        <SyntaxHighlighter style={vscDarkPlus} language={language || 'text'} PreTag="div" wrapLongLines={false}
-          customStyle={{ margin: 0, padding: '1.25rem 1.5rem', fontSize: '13px', lineHeight: '1.65', borderRadius: 0, backgroundColor: '#0a0a0a', overflowX: 'auto' }}>
+        <SyntaxHighlighter style={CODE_THEME} language={language || 'text'} PreTag="div" wrapLongLines={false}
+          codeTagProps={{ style: { fontFamily: 'inherit' } }}
+          customStyle={{ margin: 0, padding: '1rem', fontSize: '13.5px', lineHeight: '1.65', borderRadius: 0, background: 'transparent', overflowX: 'auto', fontFamily: 'var(--font-code), ui-monospace, monospace' }}>
           {code}
         </SyntaxHighlighter>
       </div>
@@ -192,249 +368,286 @@ CodeBlock.displayName = 'CodeBlock';
 
 // ─── MarkdownRenderer ─────────────────────────────────────────────────────────
 
-const MarkdownRenderer = memo(({ content, fontSize }: { content: string; fontSize: string }) => (
-  <div className={`text-gray-200 ${fontSize} leading-relaxed`}>
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        code({ className, children, ...props }: any) {
-          const match = /language-(\w+)/.exec(className || '');
-          if (match) return <CodeBlock language={match[1]}>{children}</CodeBlock>;
-          return <code className="bg-white/10 text-blue-300 px-1.5 py-0.5 rounded text-[13px] font-mono border border-white/5" {...props}>{children}</code>;
-        },
-        p: ({ children }) => <p className="mb-3 last:mb-0 leading-7">{children}</p>,
-        strong: ({ children }) => <strong className="font-semibold text-gray-100">{children}</strong>,
-        em: ({ children }) => <em className="italic text-gray-300">{children}</em>,
-        h1: ({ children }) => <h1 className="text-2xl font-bold text-gray-100 mt-5 mb-2">{children}</h1>,
-        h2: ({ children }) => <h2 className="text-xl font-bold text-gray-100 mt-4 mb-2">{children}</h2>,
-        h3: ({ children }) => <h3 className="text-lg font-bold text-gray-100 mt-3 mb-1">{children}</h3>,
-        h4: ({ children }) => <h4 className="text-base font-bold text-gray-200 mt-3 mb-1">{children}</h4>,
-        ul: ({ children }) => <ul className="my-2 space-y-1">{children}</ul>,
-        ol: ({ children }) => <ol className="my-2 space-y-1">{children}</ol>,
-        li: ({ children }) => <li className="flex gap-2 leading-7"><span className="text-blue-400 flex-shrink-0 mt-0.5 select-none">&#8226;</span><span>{children}</span></li>,
-        blockquote: ({ children }) => <blockquote className="border-l-4 border-blue-500/50 pl-4 my-3 text-gray-400 italic">{children}</blockquote>,
-        table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full border border-white/10 rounded-lg overflow-hidden text-sm">{children}</table></div>,
-        thead: ({ children }) => <thead className="bg-white/5">{children}</thead>,
-        th: ({ children }) => <th className="px-4 py-2 text-left text-gray-300 font-semibold border-b border-white/10">{children}</th>,
-        td: ({ children }) => <td className="px-4 py-2 text-gray-400 border-b border-white/5">{children}</td>,
-        a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 underline underline-offset-2 hover:text-blue-300 transition-colors">{children}</a>,
-        hr: () => <hr className="my-4 border-white/10" />,
-      }}>
+const MarkdownRenderer = memo(({ content, fontSize, t }: { content: string; fontSize: string; t: Strings }) => (
+  <div dir="auto" className={`y-prose text-y-ink ${fontSize} leading-[1.65] break-words`}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+      code({ className, children, ...props }: React.ComponentProps<'code'>) {
+        const match = /language-(\w+)/.exec(className || '');
+        if (match) return <CodeBlock language={match[1]} t={t}>{children}</CodeBlock>;
+        return <code className="bg-y-surface2 px-1.5 py-0.5 rounded-md text-[0.88em] font-mono" {...props}>{children}</code>;
+      },
+      pre: ({ children }) => <>{children}</>,
+      p: ({ children }) => <p className="mb-4 last:mb-0">{children}</p>,
+      strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+      h1: ({ children }) => <h1 className="text-[1.5em] font-bold tracking-tight mt-7 mb-3">{children}</h1>,
+      h2: ({ children }) => <h2 className="text-[1.3em] font-bold tracking-tight mt-6 mb-2.5">{children}</h2>,
+      h3: ({ children }) => <h3 className="text-[1.12em] font-bold mt-5 mb-2">{children}</h3>,
+      h4: ({ children }) => <h4 className="font-bold mt-4 mb-1.5">{children}</h4>,
+      ul: ({ children }) => <ul className="my-3 pl-5 space-y-1.5 list-disc marker:text-y-subtle">{children}</ul>,
+      ol: ({ children }) => <ol className="my-3 pl-6 space-y-1.5 list-decimal marker:text-y-subtle marker:font-bold">{children}</ol>,
+      li: ({ children }) => <li className="pl-1">{children}</li>,
+      blockquote: ({ children }) => <blockquote className="border-l border-y-line-strong pl-4 my-4 text-y-muted">{children}</blockquote>,
+      table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full text-[0.92em] tabular-nums">{children}</table></div>,
+      th: ({ children }) => <th className="px-3 py-2 text-left font-bold border-b border-y-line-strong">{children}</th>,
+      td: ({ children }) => <td className="px-3 py-2 text-y-muted border-b border-y-line">{children}</td>,
+      a: ({ children, href }) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-y-link underline underline-offset-[3px] decoration-1 hover:decoration-2">{children}</a>,
+      hr: () => <hr className="my-6 border-y-line" />,
+    }}>
       {content}
     </ReactMarkdown>
   </div>
 ));
 MarkdownRenderer.displayName = 'MarkdownRenderer';
 
-// ─── TypingDots ──────────────────────────────────────────────────────────────
+// ─── InkDrop (yanit beklenirken) ─────────────────────────────────────────────
 
-const TypingDots = memo(() => (
-  <div className="flex gap-1.5 items-center h-6">
-    {[0, 1, 2].map(i => (
-      <span key={i} className="w-2 h-2 bg-blue-400/60 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.9s' }} />
-    ))}
+const InkDrop = memo(({ label }: { label: string }) => (
+  <div className="relative size-7" role="status" aria-label={label}>
+    <span className="y-drop absolute inset-0 rounded-full bg-y-accent" />
+    <span className="y-drop absolute inset-0 rounded-full bg-[#D9A441]" style={{ animationDelay: '500ms' }} />
   </div>
 ));
-TypingDots.displayName = 'TypingDots';
+InkDrop.displayName = 'InkDrop';
 
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
-const MessageBubble = memo(({ msg, isStreaming, fontSize, theme }: {
-  msg: Message; isStreaming?: boolean; fontSize: string; theme: string;
-}) => (
-  <div className={`py-7 px-4 md:px-12 ${msg.role === 'ai' ? '' : theme === 'dark' ? 'bg-white/[0.03]' : 'bg-gray-100'}`}>
-    <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
-      <div className="flex-shrink-0 mt-1">
-        {msg.role === 'ai'
-          ? <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-500/20"><Bot size={16} className="text-white" /></div>
-          : <div className="w-8 h-8 rounded-lg bg-gray-700 border border-gray-600 flex items-center justify-center"><User size={16} className="text-gray-300" /></div>
-        }
+const MessageBubble = memo(({ msg, fontSize, fresh, t, onRetry, isLast, busy }: {
+  msg: Message; fontSize: string; fresh: boolean; t: Strings; onRetry: () => void; isLast: boolean; busy: boolean;
+}) => {
+  if (msg.role === 'user') {
+    return (
+      <div className={`flex justify-end ${fresh ? 'y-msg-new' : ''}`}>
+        <div dir="auto" className={`max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-y-bubble text-y-bubble-ink whitespace-pre-wrap break-words leading-[1.55] ${fontSize}`}>
+          {msg.text}
+        </div>
       </div>
-      <div className="flex-1 overflow-hidden min-w-0">
-        {msg.text ? <MarkdownRenderer content={msg.text} fontSize={fontSize} /> : <TypingDots />}
-      </div>
+    );
+  }
+  const failed = msg.status && msg.status !== 'stopped';
+  const waiting = !msg.text && !msg.status;
+  return (
+    <div className={`group ${fresh ? 'y-msg-new' : ''}`}>
+      {waiting ? <InkDrop label={t.typing} /> : msg.text ? <MarkdownRenderer content={msg.text} fontSize={fontSize} t={t} /> : null}
+
+      {msg.status === 'stopped' && <p className="mt-2 text-sm text-y-subtle">{t.stopped}</p>}
+      {failed && (
+        <div role="alert" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-y-danger">
+          <AlertCircle size={16} className="flex-shrink-0" />
+          <span className="text-[15px]">{t.errors[msg.status as keyof Strings['errors']]}</span>
+          {isLast && msg.status !== 'daily_limit' && (
+            <button type="button" onClick={onRetry} disabled={busy}
+              className="y-hit inline-flex items-center gap-1.5 text-[15px] font-semibold underline underline-offset-[3px] disabled:opacity-50">
+              {t.retry}
+            </button>
+          )}
+        </div>
+      )}
+
+      {msg.text && !failed && (
+        <div className={`mt-2 flex items-center gap-1 transition-opacity duration-150 ${isLast ? '' : 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100'}`}>
+          <CopyButton text={msg.text} showLabel={false} t={t} className="size-8 rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2" />
+          {isLast && !busy && (
+            <button type="button" onClick={onRetry} title={t.regenerate} aria-label={t.regenerate}
+              className="y-hit size-8 inline-flex items-center justify-center rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150">
+              <RotateCcw size={14} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
-  </div>
-));
+  );
+});
 MessageBubble.displayName = 'MessageBubble';
 
 // ─── WelcomeScreen ───────────────────────────────────────────────────────────
 
-const WelcomeScreen = memo(({ onPromptClick }: { onPromptClick: (p: string) => void }) => (
-  <div className="h-full flex flex-col items-center justify-center text-center p-8 gap-8">
-    <div>
-      <div className="w-16 h-16 bg-gradient-to-br from-blue-600/30 to-cyan-500/20 border border-blue-500/30 rounded-2xl flex items-center justify-center mb-5 mx-auto shadow-xl shadow-blue-500/10 rotate-3">
-        <Sparkles size={28} className="text-blue-400" />
-      </div>
-      <h2 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-b from-white to-gray-500">Nasil yardimci olabilirim?</h2>
-      <p className="text-gray-500 mt-2 text-sm max-w-sm">YamanAI ile kod yazabilir, ceviri yapabilir veya sadece sohbet edebilirsin.</p>
-    </div>
-    <div className="grid grid-cols-2 gap-3 w-full max-w-md">
-      {SUGGESTED_PROMPTS.map(({ label, prompt }) => (
-        <button
-          key={label}
-          onClick={() => onPromptClick(prompt)}
-          className="flex items-center justify-between gap-2 px-5 py-4 bg-white/[0.06] hover:bg-white/[0.12] border border-white/20 hover:border-blue-500/50 rounded-xl text-sm text-gray-200 hover:text-white transition-all group text-left shadow-sm hover:shadow-lg hover:shadow-blue-500/10 hover:-translate-y-0.5"
-        >
-          <span className="font-semibold">{label}</span>
-          <ChevronRight size={15} className="text-gray-500 group-hover:text-blue-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
-        </button>
-      ))}
-    </div>
+const WelcomeScreen = memo(({ onPromptClick, name, t }: { onPromptClick: (p: string) => void; name?: string; t: Strings }) => (
+  <div className="min-h-full flex flex-col justify-center max-w-[760px] mx-auto px-4 md:px-6 pt-8 pb-6">
+    <h1 className="text-[32px] md:text-[44px] font-bold tracking-[-0.02em] leading-[1.1] text-balance">
+      {name ? t.greetingName(name) : t.greeting}
+    </h1>
+    <p className="text-y-muted mt-3 text-[17px] leading-relaxed max-w-[52ch]">{t.greetingSub}</p>
+
+    <section aria-labelledby="prompt-title" className="mt-8">
+      <h2 id="prompt-title" className="sr-only">{t.starters}</h2>
+      <ul className="grid grid-cols-1 sm:grid-cols-2 sm:gap-x-8 border-t border-y-line">
+        {t.prompts.map(({ label, prompt }) => (
+          <li key={label} className="border-b border-y-line">
+            <button type="button" onClick={() => onPromptClick(prompt)}
+              className="group w-full min-h-[68px] py-3 text-left rounded-lg">
+              <span className="block font-bold group-hover:underline underline-offset-[3px]">{label}</span>
+              <span className="block text-[15px] text-y-muted mt-0.5 line-clamp-1">{prompt}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   </div>
 ));
 WelcomeScreen.displayName = 'WelcomeScreen';
 
 // ─── SidebarGroup ────────────────────────────────────────────────────────────
 
-const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete }: {
+const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, t }: {
   label: string; convs: Conversation[]; activeId: string;
-  onSelect: (id: string) => void; onDelete: (id: string) => void;
+  onSelect: (id: string) => void; onDelete: (id: string) => void; t: Strings;
 }) => {
   if (!convs.length) return null;
   return (
-    <div className="mb-3">
-      <p className="text-[10px] font-semibold text-gray-600 mb-1 px-2 uppercase tracking-wider">{label}</p>
-      {convs.map(c => (
-        <div key={c.id} className={`group flex items-center gap-1 w-full rounded-lg transition-colors mb-0.5 ${c.id === activeId ? 'bg-white/10' : 'hover:bg-white/5'}`}>
-          <button onClick={() => onSelect(c.id)} className="flex-1 flex items-center gap-2 px-3 py-2 text-sm text-left text-gray-400 hover:text-gray-200 min-w-0">
-            <MessageSquare size={13} className="flex-shrink-0 text-gray-600" />
-            <span className="truncate">{c.title}</span>
-          </button>
-          <button onClick={() => onDelete(c.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-600 hover:text-red-400 transition-all mr-1 rounded flex-shrink-0" aria-label="Sohbeti sil">
-            <Trash2 size={13} />
-          </button>
-        </div>
-      ))}
+    <div className="mb-2">
+      <p className="text-[13px] font-bold text-y-side-muted mt-4 mb-1.5 px-3">{label}</p>
+      <ul className="space-y-0.5">
+        {convs.map(c => {
+          const isActive = c.id === activeId;
+          return (
+            <li key={c.id} className={`group relative flex items-center h-10 w-full rounded-xl transition-colors duration-150 ${isActive ? 'bg-y-side-active' : 'hover:bg-y-side-hover'}`}>
+              <button type="button" onClick={() => onSelect(c.id)} aria-current={isActive ? 'true' : undefined}
+                className={`flex-1 h-full flex items-center gap-2.5 pl-3 pr-1 text-[15px] text-left min-w-0 rounded-xl ${isActive ? 'text-y-side-ink font-bold' : 'text-y-side-ink/85'}`}>
+                <ChatMark id={c.id} />
+                <span className="truncate">{c.title}</span>
+              </button>
+              <button type="button" onClick={() => onDelete(c.id)} title={t.deleteChat} aria-label={`${t.deleteChat}: ${c.title}`}
+                className="size-8 mr-1 flex items-center justify-center rounded-full flex-shrink-0 text-y-side-muted hover:text-y-side-ink hover:bg-y-side-active transition-[color,background-color,opacity] duration-150 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100 pointer-fine:group-focus-within:opacity-100">
+                <Trash2 size={14} />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 });
 SidebarGroup.displayName = 'SidebarGroup';
 
+// ─── Segmented control ───────────────────────────────────────────────────────
+
+function Segmented<T extends string>({ label, options, value, onChange, onLocked }: {
+  label: string; value: T; onChange: (v: T) => void; onLocked?: () => void;
+  options: { value: T; label: string; icon?: React.ReactNode; locked?: boolean }[];
+}) {
+  // Radyo grubu: Tab grubun tamamina bir kez girer, oklar secenekler arasinda gezer
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const open = options.filter(o => !o.locked);
+    const next = open[(open.findIndex(o => o.value === value) + step + open.length) % open.length];
+    onChange(next.value);
+    const buttons = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=radio]');
+    buttons[options.indexOf(next)]?.focus();
+  };
+  return (
+    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown}
+      className="grid gap-1 p-1 rounded-full bg-y-surface2"
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}>
+      {options.map(o => {
+        const selected = o.value === value;
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={selected} tabIndex={selected || o.locked ? 0 : -1}
+            onClick={() => (o.locked ? onLocked?.() : onChange(o.value))}
+            className={`min-h-10 flex items-center justify-center gap-2 px-2 text-[15px] font-semibold rounded-full transition-colors duration-150 ${selected ? 'bg-y-bubble text-y-bubble-ink' : 'text-y-muted hover:text-y-ink'}`}>
+            {o.locked ? <Lock size={14} className="flex-shrink-0" /> : o.icon}<span className="truncate">{o.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Settings Modal ──────────────────────────────────────────────────────────
 
-const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport }: {
-  settings: AppSettings;
-  onSave: (s: AppSettings) => void;
-  onClose: () => void;
-  onDeleteAll: () => void;
-  onExport: () => void;
+const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, t, usage }: {
+  settings: AppSettings; onSave: (s: AppSettings) => void;
+  onClose: () => void; onDeleteAll: () => void; onExport: () => void; t: Strings; usage: Usage | null;
 }) => {
+  const ref = useDialogFocus<HTMLDivElement>();
+  const { signedIn, requireLogin } = useContext(GateContext);
   const [local, setLocal] = useState<AppSettings>({ ...settings });
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const patch = (key: keyof AppSettings, val: any) => setLocal(p => ({ ...p, [key]: val }));
+  const patch = <K extends keyof AppSettings>(key: K, val: AppSettings[K]) => setLocal(p => ({ ...p, [key]: val }));
+  const groupLabel = 'text-sm font-bold mb-2 block';
 
   return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="relative w-full max-w-lg bg-[#111] border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
-          <div className="flex items-center gap-2">
-            <Settings size={18} className="text-blue-400" />
-            <h2 className="font-bold text-lg">Ayarlar</h2>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"><X size={20} /></button>
+    <div className={`${MODAL_BACKDROP} items-end sm:items-center p-0 sm:p-4`} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="settings-title"
+        className={`${MODAL_PANEL} max-w-lg rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[90dvh]`}>
+        <div className="flex items-center justify-between h-16 px-5 sm:px-6 border-b border-y-line flex-shrink-0">
+          <h2 id="settings-title" className="font-bold text-xl tracking-tight">{t.settings}</h2>
+          <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} size-9`}><X size={20} /></button>
         </div>
-
-        {/* Body */}
-        <div className="px-6 py-5 space-y-6 max-h-[70vh] overflow-y-auto">
-
-          {/* Theme */}
+        <div className="px-5 sm:px-6 py-6 space-y-6 overflow-y-auto">
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Tema</label>
-            <div className="flex gap-2">
-              {(['dark', 'light'] as const).map(t => (
-                <button key={t} onClick={() => patch('theme', t)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
-                    local.theme === t
-                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-400'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                  }`}>
-                  {t === 'dark' ? <Moon size={16} /> : <Sun size={16} />}
-                  {t === 'dark' ? 'Koyu' : 'Acik'}
-                </button>
-              ))}
-            </div>
+            <span className={groupLabel}>{t.theme}</span>
+            <Segmented label={t.theme} value={local.theme} onChange={v => patch('theme', v)} options={[
+              { value: 'light', label: t.light, icon: <Sun size={16} /> },
+              { value: 'dark', label: t.dark, icon: <Moon size={16} /> },
+            ]} />
           </div>
-
-          {/* Font Size */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Yazi Boyutu</label>
-            <div className="flex gap-2">
-              {(['sm', 'base', 'lg'] as const).map(s => (
-                <button key={s} onClick={() => patch('fontSize', s)}
-                  className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
-                    local.fontSize === s
-                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-400'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                  }`}>
-                  <Type size={s === 'sm' ? 12 : s === 'base' ? 16 : 20} />
-                  {FONT_LABEL_MAP[s]}
-                </button>
-              ))}
-            </div>
+            <span className={groupLabel}>{t.language}</span>
+            <Segmented<LangPref> label={t.language} value={local.language} onChange={v => patch('language', v)} options={[
+              { value: 'auto', label: t.langAuto },
+              { value: 'tr', label: 'Türkçe' },
+              { value: 'en', label: 'English' },
+            ]} />
           </div>
-
-          {/* Model */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">AI Modeli</label>
-            <div className="space-y-2">
-              {(['gpt-4o', 'gpt-4o-mini'] as const).map(m => (
-                <button key={m} onClick={() => patch('model', m)}
-                  className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
-                    local.model === m
-                      ? 'bg-blue-600/20 border-blue-500/50 text-blue-400'
-                      : 'bg-white/5 border-white/10 text-gray-400 hover:bg-white/10'
-                  }`}>
-                  <span>{MODEL_LABEL_MAP[m]}</span>
-                  {local.model === m && <Check size={16} />}
-                </button>
-              ))}
-            </div>
+            <span className={groupLabel}>{t.textSize}</span>
+            <Segmented label={t.textSize} value={local.fontSize} onChange={v => patch('fontSize', v)} options={[
+              { value: 'sm' as const, label: t.small, icon: <Type size={12} /> },
+              { value: 'base' as const, label: t.normal, icon: <Type size={15} /> },
+              { value: 'lg' as const, label: t.large, icon: <Type size={18} /> },
+            ]} />
           </div>
-
-          {/* System Prompt */}
           <div>
-            <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Sistem Promptu (Opsiyonel)</label>
-            <textarea
-              value={local.systemPrompt}
-              onChange={e => patch('systemPrompt', e.target.value)}
-              placeholder='Ornegin: "Sen bir Python uzmanisin. Her zaman Turkce yanit ver."'
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500/50 resize-none h-24"
-            />
-            <p className="text-[10px] text-gray-600 mt-1">Bu prompt her sohbetin basinda AI&apos;ya gonderilir.</p>
+            <span className={groupLabel}>{t.model}</span>
+            <Segmented label={t.model} value={signedIn ? local.model : GUEST_MODEL} onChange={v => patch('model', v)} onLocked={requireLogin} options={[
+              { value: 'gpt-4o' as const, label: t.modelStrong, locked: !signedIn },
+              { value: 'gpt-4o-mini' as const, label: t.modelFast },
+            ]} />
           </div>
-
-          {/* Danger Zone */}
-          <div className="border-t border-white/10 pt-5">
-            <label className="text-xs font-semibold text-red-500/80 uppercase tracking-wider mb-3 block">Tehlikeli Bolge</label>
-            <div className="flex gap-2">
-              <button onClick={onExport}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-white/10 bg-white/5 text-gray-400 hover:bg-white/10 text-sm font-medium transition-all">
-                <Download size={16} /> Disa Aktar
+          <div>
+            <label htmlFor={signedIn ? 'system-prompt' : undefined} className={groupLabel}>{t.customInstr}</label>
+            <p className="text-sm text-y-muted -mt-1 mb-2">{t.customHint}</p>
+            {signedIn ? (
+              <textarea id="system-prompt" dir="auto" rows={3} maxLength={4000} value={local.systemPrompt} onChange={e => patch('systemPrompt', e.target.value)}
+                placeholder={t.customPlaceholder}
+                className="w-full bg-y-surface border border-y-line-strong rounded-xl p-3 text-base text-y-ink placeholder:text-y-subtle focus:outline-none focus:border-y-ink resize-none transition-colors duration-150" />
+            ) : (
+              <button type="button" onClick={requireLogin} className="w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full border border-y-line-strong text-y-ink hover:bg-y-surface2 text-[15px] font-semibold transition-colors duration-150">
+                <Lock size={15} /> {t.customLocked}
               </button>
+            )}
+          </div>
+          {usage && (
+            <div>
+              <span className={groupLabel}>{t.usageSection}</span>
+              <p className="text-[15px] text-y-muted tabular-nums">{t.usageToday(Math.min(usage.used, usage.limit), usage.limit)}</p>
+            </div>
+          )}
+          <div>
+            <span className={groupLabel}>{t.data}</span>
+            <button type="button" onClick={onExport} className="w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full border border-y-line-strong text-y-ink hover:bg-y-surface2 text-[15px] font-semibold transition-colors duration-150">
+              <Download size={16} /> {t.export}
+            </button>
+            {/* Yikici eylem digerlerinden ayri durur: yanlislikla tiklanmasin */}
+            <div className="mt-8">
               {!confirmDelete ? (
-                <button onClick={() => setConfirmDelete(true)}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-sm font-medium transition-all">
-                  <Trash2 size={16} /> Tum Sohbetleri Sil
+                <button type="button" onClick={() => setConfirmDelete(true)} className="min-h-11 inline-flex items-center gap-2 px-1 text-y-danger text-[15px] font-semibold rounded-lg hover:underline underline-offset-[3px]">
+                  <Trash2 size={16} /> {t.deleteAll}
                 </button>
               ) : (
-                <button onClick={() => { onDeleteAll(); setConfirmDelete(false); }}
-                  className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-red-500 bg-red-600 text-white text-sm font-bold transition-all animate-pulse">
-                  Emin misin? Tikla
+                <button type="button" onClick={() => { onDeleteAll(); setConfirmDelete(false); onClose(); }} className="w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full bg-y-danger text-y-canvas text-[15px] font-bold transition-colors duration-150">
+                  {t.confirmDelete}
                 </button>
               )}
             </div>
           </div>
         </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/10">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Iptal</button>
-          <button onClick={() => { onSave(local); onClose(); }}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold rounded-xl transition-colors shadow-lg shadow-blue-500/20">
-            Kaydet
+        <div className="flex items-center justify-end gap-2 px-5 sm:px-6 py-4 border-t border-y-line flex-shrink-0">
+          <button type="button" onClick={onClose} className="min-h-11 px-4 text-[15px] font-semibold text-y-muted hover:text-y-ink rounded-full hover:bg-y-surface2 transition-colors duration-150">{t.cancel}</button>
+          <button type="button" onClick={() => { onSave(local); onClose(); }} className="min-h-11 px-6 bg-y-accent hover:bg-y-accent-hover text-white text-[15px] font-bold rounded-full transition-colors duration-150">
+            {t.save}
           </button>
         </div>
       </div>
@@ -446,441 +659,590 @@ SettingsModal.displayName = 'SettingsModal';
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function Home() {
+  const { data: session, status: sessionStatus } = useSession();
+  const signedIn = !!session;
+  const lang = useLang();
+  const t = STRINGS[lang];
+
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId]           = useState<string>('');
   const [input, setInput]                 = useState('');
   const [loading, setLoading]             = useState(false);
-  const [showPopup, setShowPopup]         = useState(false);
-  const [sidebarOpen, setSidebarOpen]     = useState(false);
-  const [showSettings, setShowSettings]   = useState(false);
-  const [settings, setSettings]           = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [streamConvId, setStreamConvId]   = useState<string | null>(null);
+  const [showDesktopPopup, setShowDesktopPopup] = useState(false);
+  const [showLoginPopup, setShowLoginPopup]     = useState(false);
+  const [showSettings, setShowSettings]         = useState(false);
+  const [sidebarOpen, setSidebarOpen]           = useState(false);
+  const [settings, setSettings]                 = useState<AppSettings>(DEFAULT_SETTINGS);
+  const [hydrated, setHydrated]                 = useState(false);
+  const [desktopOffer, setDesktopOffer]         = useState(false);
+  const [search, setSearch]                     = useState('');
+  const [atBottom, setAtBottom]                 = useState(true);
+  const [undo, setUndo]                         = useState<{ label: string; prev: Conversation[]; activeId: string } | null>(null);
+  const [usage, setUsage]                       = useState<Usage | null>(null);
+  const [storageFull, setStorageFull]           = useState(false);
+  // Bu oturumda gonderilen mesajlar: yalnizca bunlar giris animasyonu alir
+  const [freshIds, setFreshIds]                 = useState<Set<string>>(() => new Set());
 
-  const messagesEndRef     = useRef<HTMLDivElement>(null);
+  const scrollerRef        = useRef<HTMLDivElement>(null);
+  const threadRef          = useRef<HTMLDivElement>(null);
+  const stuckRef           = useRef(true);
   const inputRef           = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const activeConv = useMemo(() => conversations.find(c => c.id === activeId) ?? null, [conversations, activeId]);
-  const messages: Message[] = activeConv?.messages ?? [];
-  const tc = useMemo(() => themeClasses(settings.theme), [settings.theme]);
-  const fontClass = FONT_SIZE_MAP[settings.fontSize];
+  const activeConv   = useMemo(() => conversations.find(c => c.id === activeId) ?? null, [conversations, activeId]);
+  const messages     = useMemo(() => activeConv?.messages ?? [], [activeConv]);
+  const hasThread    = messages.length > 0;
+  const fontClass    = FONT_SIZE_MAP[settings.fontSize];
+  const firstName    = session?.user?.name?.split(' ')[0];
+  const streamingHere = loading && streamConvId === activeId;
+  const lastMsgId    = messages[messages.length - 1]?.id;
+  const effectiveModel = signedIn ? settings.model : GUEST_MODEL;
+  const guestLimit   = usage?.guestLimit ?? DEFAULT_GUEST_LIMIT;
+  const userLimit    = usage?.userLimit ?? DEFAULT_USER_LIMIT;
+  const remaining    = usage ? Math.max(usage.limit - usage.used, 0) : null;
+  const exhausted    = remaining === 0;
+  const requireLogin = useCallback(() => { setShowSettings(false); setShowLoginPopup(true); }, []);
+  const gate         = useMemo(() => ({ signedIn, requireLogin }), [signedIn, requireLogin]);
+  // Plaka biten her yanitla buyur; akan yanit, bitene kadar sayilmaz
+  const settledAnswers = messages.filter(m => m.role === 'ai').length - (streamingHere ? 1 : 0);
 
-  const { today, yesterday, older } = useMemo(
-    () => groupByDate([...conversations].sort((a, b) => b.updatedAt - a.updatedAt)),
-    [conversations],
-  );
+  const visible = useMemo(() => {
+    // Arama kutusu gizliyken eski arama listeyi suzmeye devam etmesin
+    const q = conversations.length >= SEARCH_AFTER ? search.trim().toLocaleLowerCase(lang) : '';
+    const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+    if (!q) return sorted;
+    return sorted.filter(c =>
+      c.title.toLocaleLowerCase(lang).includes(q) ||
+      c.messages.some(m => m.text.toLocaleLowerCase(lang).includes(q)));
+  }, [conversations, search, lang]);
+  const { today, yesterday, older } = useMemo(() => groupByDate(visible), [visible]);
 
   useEffect(() => {
     const loaded = loadConversations();
     setConversations(loaded);
-    setActiveId(loaded[0]?.id ?? '');
+    setActiveId(loaded[0] ? [...loaded].sort((a, b) => b.updatedAt - a.updatedAt)[0].id : '');
     setSettings(loadSettings());
+    setDesktopOffer(offersDesktopApp());
+    setHydrated(true);
   }, []);
 
-  useEffect(() => { saveConversations(conversations); }, [conversations]);
-  useEffect(() => { saveSettings(settings); }, [settings]);
+  // Yukleme bitmeden yazma: aksi halde kayitli sohbetlerin ustune bos liste yazilir.
+  // Her jetonda degil, yazma durulunca kaydet.
+  useEffect(() => {
+    if (!hydrated) return;
+    const save = () => {
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(conversations));
+        setStorageFull(false);
+      } catch { setStorageFull(true); }
+    };
+    const handle = setTimeout(save, 400);
+    // Sayfa kapanirken bekleyen kaydi kaybetme
+    window.addEventListener('pagehide', save);
+    return () => { clearTimeout(handle); window.removeEventListener('pagehide', save); };
+  }, [conversations, hydrated]);
 
   useEffect(() => {
-    if (!localStorage.getItem(LS_POPUP)) {
-      const t = setTimeout(() => setShowPopup(true), 2000);
-      return () => clearTimeout(t);
-    }
+    if (!hydrated) return;
+    try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch {}
+    document.documentElement.dataset.theme = settings.theme;
+    notifySettingsChanged();
+  }, [settings, hydrated]);
+
+  useEffect(() => { document.documentElement.lang = lang; }, [lang]);
+
+  // Limit durumunu sunucudan al; giris yapilinca limit degistigi icin oturumla birlikte yenilenir
+  useEffect(() => {
+    if (sessionStatus === 'loading') return;
+    let cancelled = false;
+    fetch('/api/chat')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => { if (data && !cancelled) setUsage(toUsage(data)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [sessionStatus]);
+
+  // Masaustu teklifi: ilk yanit bittikten sonra, yalnizca Windows tarayicisinda
+  useEffect(() => {
+    if (!hydrated || loading || !desktopOffer || showLoginPopup) return;
+    if (!conversations.some(c => c.messages.some(m => m.role === 'ai' && m.text))) return;
+    if (localStorage.getItem(LS_POPUP)) return;
+    const handle = setTimeout(() => setShowDesktopPopup(true), 1500);
+    return () => clearTimeout(handle);
+  }, [hydrated, loading, desktopOffer, conversations, showLoginPopup]);
+
+  // Kullanici yukari kaydirdiysa akis onu asagi cekmesin
+  const onScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    stuckRef.current = near;
+    setAtBottom(near);
   }, []);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, loading]);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (el && stuckRef.current) el.scrollTop = el.scrollHeight;
+  }, [messages, loading]);
+
+  // Kod renklendirici gibi gec yuklenen icerik yuksekligi degistirince de altta kal
+  useEffect(() => {
+    const el = scrollerRef.current;
+    const content = threadRef.current;
+    if (!el || !content) return;
+    const ro = new ResizeObserver(() => { if (stuckRef.current) el.scrollTop = el.scrollHeight; });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [activeId, hasThread]);
+
+  const jumpToBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    stuckRef.current = true;
+    setAtBottom(true);
+    el.scrollTo({ top: el.scrollHeight, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, []);
 
   useEffect(() => {
     document.body.style.overflow = sidebarOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
   }, [sidebarOpen]);
 
+  // Login popup: 3 mesaj sonrasi, giris yapilmamissa ve yanit bitmisse goster
+  useEffect(() => {
+    if (session || loading || !hydrated) return;
+    const count = parseInt(localStorage.getItem(LS_MSG_COUNT) ?? '0', 10);
+    if (count >= LOGIN_POPUP_AFTER && !localStorage.getItem(LS_LOGIN_SEEN)) {
+      setShowLoginPopup(true);
+    }
+  }, [conversations, session, loading, hydrated]);
+
+  const closeLoginPopup = useCallback(() => {
+    setShowLoginPopup(false);
+    localStorage.setItem(LS_LOGIN_SEEN, 'true');
+  }, []);
+
   const resizeTextarea = useCallback((el: HTMLTextAreaElement) => {
     el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, 240)}px`;
   }, []);
 
   const resetInput = useCallback(() => {
     setInput('');
-    if (inputRef.current) inputRef.current.style.height = '64px';
+    if (inputRef.current) inputRef.current.style.height = 'auto';
   }, []);
 
   const handleInput = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value); resizeTextarea(e.target);
   }, [resizeTextarea]);
 
-  const upsertConv = useCallback((conv: Conversation) => {
-    setConversations(prev => {
-      const idx = prev.findIndex(c => c.id === conv.id);
-      if (idx === -1) return [conv, ...prev];
-      const next = [...prev]; next[idx] = conv; return next;
-    });
+  const focusInput = useCallback(() => {
+    // Dokunmatik ekranda klavyeyi kendiliginden acma
+    if (matchMedia('(pointer: fine)').matches) setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
   const startNewChat = useCallback(() => {
-    const c: Conversation = { id: uid(), title: 'Yeni Sohbet', messages: [], updatedAt: Date.now() };
-    setConversations(prev => [c, ...prev]);
-    setActiveId(c.id);
-    resetInput();
-    setSidebarOpen(false);
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, [resetInput]);
+    // Sohbet ilk mesajla olusur, boylece bos sohbetler birikmez
+    setActiveId(''); resetInput(); setSidebarOpen(false); setFreshIds(new Set());
+    stuckRef.current = true; setAtBottom(true);
+    focusInput();
+  }, [resetInput, focusInput]);
 
   const loadConversation = useCallback((id: string) => {
-    setActiveId(id);
-    setSidebarOpen(false);
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, []);
+    setActiveId(id); setSidebarOpen(false); setFreshIds(new Set());
+    stuckRef.current = true; setAtBottom(true);
+    focusInput();
+  }, [focusInput]);
 
-  const deleteConversation = useCallback((id: string) => {
-    setConversations(prev => {
-      const next = prev.filter(c => c.id !== id);
-      if (id === activeId) setActiveId(next[0]?.id ?? '');
-      return next;
-    });
+  const offerUndo = useCallback((label: string, prev: Conversation[]) => {
+    setUndo({ label, prev, activeId });
   }, [activeId]);
 
+  useEffect(() => {
+    if (!undo) return;
+    const handle = setTimeout(() => setUndo(null), UNDO_MS);
+    return () => clearTimeout(handle);
+  }, [undo]);
+
+  const deleteConversation = useCallback((id: string) => {
+    offerUndo(t.deleted, conversations);
+    setConversations(prev => prev.filter(c => c.id !== id));
+    if (id === activeId) setActiveId('');
+  }, [activeId, conversations, offerUndo, t.deleted]);
+
   const deleteAllConversations = useCallback(() => {
-    setConversations([]);
-    setActiveId('');
-  }, []);
+    offerUndo(t.deletedAll, conversations);
+    setConversations([]); setActiveId('');
+  }, [conversations, offerUndo, t.deletedAll]);
 
   const exportConversations = useCallback(() => {
-    const data = JSON.stringify(conversations, null, 2);
-    const blob = new Blob([data], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(conversations, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `yamanai-sohbetler-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
+    a.href = url; a.download = `yamanai-${new Date().toISOString().slice(0, 10)}.json`; a.click();
     URL.revokeObjectURL(url);
   }, [conversations]);
 
   const stopGeneration = useCallback(() => {
     abortControllerRef.current?.abort();
-    setLoading(false);
   }, []);
 
-  // ── Send message with model + custom system prompt ──
-  const sendMessage = useCallback(async (text: string) => {
-    if (!text.trim() || loading) return;
-
-    let convId = activeId;
-    let conv   = conversations.find(c => c.id === convId);
-    if (!conv) {
-      conv = { id: uid(), title: text.slice(0, 50), messages: [], updatedAt: Date.now() };
-      setConversations(prev => [conv!, ...prev]);
-      setActiveId(conv.id);
-      convId = conv.id;
-    }
-
-    const userMsg: Message = { id: uid(), role: 'user', text: text.trim() };
+  // Yaniti akitir. `base`, modele gonderilecek mesajlardir (son mesaj kullanicinin).
+  const runCompletion = useCallback(async (conv: Conversation, base: Message[]) => {
     const aiId = uid();
-    const aiMsg: Message   = { id: aiId,  role: 'ai',   text: '' };
+    const convId = conv.id;
+    setFreshIds(prev => new Set(prev).add(aiId));
+    setConversations(prev => {
+      const next: Conversation = { ...conv, messages: [...base, { id: aiId, role: 'ai', text: '' }], updatedAt: Date.now() };
+      const idx = prev.findIndex(c => c.id === convId);
+      if (idx === -1) return [next, ...prev];
+      const copy = [...prev]; copy[idx] = next; return copy;
+    });
+    setLoading(true); setStreamConvId(convId);
+    stuckRef.current = true; setAtBottom(true);
 
-    const updatedConv: Conversation = {
-      ...conv,
-      title:     conv.messages.length === 0 ? text.slice(0, 50) : conv.title,
-      messages:  [...conv.messages, userMsg, aiMsg],
-      updatedAt: Date.now(),
+    const patchAi = (patch: Partial<Message>) => {
+      setConversations(prev => prev.map(c => c.id !== convId ? c : {
+        ...c, updatedAt: Date.now(), messages: c.messages.map(m => m.id === aiId ? { ...m, ...patch } : m),
+      }));
     };
-    upsertConv(updatedConv);
-    resetInput();
-    setLoading(true);
-
-    const history = [...conv.messages, userMsg].map(m => ({
-      role: m.role === 'ai' ? 'assistant' : 'user', content: m.text,
-    }));
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
-    const patchAi = (newText: string) => {
-      setConversations(prev => prev.map(c => {
-        if (c.id !== convId) return c;
-        return { ...c, updatedAt: Date.now(), messages: c.messages.map(m => m.id === aiId ? { ...m, text: newText } : m) };
-      }));
-    };
+    const history = base.filter(m => m.text).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
 
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: history,
-          model: settings.model,
-          customSystemPrompt: settings.systemPrompt || undefined,
-        }),
+        body: JSON.stringify({ messages: history, model: effectiveModel, customSystemPrompt: (signedIn && settings.systemPrompt) || undefined }),
         signal: controller.signal,
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => null);
+        const code = data?.error;
+        if (code === 'daily_limit') setUsage(toUsage(data));
+        patchAi({ status: code === 'rate_limited' || code === 'not_configured' || code === 'daily_limit' ? code : 'generic' });
+        return;
+      }
+      const usedNow = Number(res.headers.get('X-Usage-Used'));
+      if (usedNow) setUsage(prev => prev && { ...prev, used: usedNow });
 
-      const reader = res.body?.getReader();
+      const reader  = res.body.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
-
-      if (reader) {
-        let acc    = '';
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            buffer += decoder.decode();
-            if (buffer.trim()) {
-              const trimmed = buffer.trim();
-              if (trimmed.startsWith('data:')) {
-                const jsonStr = trimmed.slice(5).trim();
-                if (jsonStr && jsonStr !== '[DONE]') {
-                  try {
-                    const p = JSON.parse(jsonStr);
-                    const delta = p.choices?.[0]?.delta?.content ?? p.delta ?? '';
-                    if (delta) { acc += delta; patchAi(acc); }
-                    if (p.response) { acc = p.response; patchAi(acc); }
-                  } catch {}
-                }
-              }
-            }
-            break;
-          }
-
-          buffer += decoder.decode(value, { stream: true });
-
-          let newlineIdx: number;
-          while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-            const line = buffer.slice(0, newlineIdx).trim();
-            buffer = buffer.slice(newlineIdx + 1);
-
-            if (!line || !line.startsWith('data:')) continue;
-            const jsonStr = line.slice(5).trim();
-            if (!jsonStr || jsonStr === '[DONE]') continue;
-
-            try {
-              const p = JSON.parse(jsonStr);
-              const delta: string = p.choices?.[0]?.delta?.content ?? p.delta ?? '';
-              if (delta) { acc += delta; patchAi(acc); }
-              if (p.response) { acc = p.response; patchAi(acc); }
-            } catch {
-              // Incomplete JSON - skip silently
-            }
-          }
+      let acc = '', buffer = '';
+      const onLine = (raw: string) => {
+        const line = raw.trim();
+        if (!line.startsWith('data:')) return;
+        const js = line.slice(5).trim();
+        if (!js || js === '[DONE]') return;
+        try {
+          const d: string = JSON.parse(js).delta ?? '';
+          if (d) { acc += d; patchAi({ text: acc }); }
+        } catch {}
+      };
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) { buffer += decoder.decode(); onLine(buffer); break; }
+        buffer += decoder.decode(value, { stream: true });
+        let idx: number;
+        while ((idx = buffer.indexOf('\n')) !== -1) {
+          onLine(buffer.slice(0, idx));
+          buffer = buffer.slice(idx + 1);
         }
-
-        if (!acc) {
-          const data = await res.clone().json().catch(() => null);
-          if (data?.response) patchAi(data.response);
-        }
-      } else {
-        const data = await res.json();
-        patchAi(data.response ?? 'Bir hata olustu.');
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        setConversations(prev => prev.map(c => {
-          if (c.id !== convId) return c;
-          return { ...c, messages: c.messages.map(m => m.id === aiId && !m.text ? { ...m, text: '_Yanit durduruldu._' } : m) };
-        }));
-      } else {
-        patchAi('Baglanti hatasi olustu. Lutfen tekrar deneyin.');
-      }
+      if (!acc) patchAi({ status: 'generic' });
+    } catch (err: unknown) {
+      patchAi({ status: (err as Error)?.name === 'AbortError' ? 'stopped' : 'network' });
     } finally {
-      setLoading(false);
+      setLoading(false); setStreamConvId(null);
       abortControllerRef.current = null;
-      setTimeout(() => inputRef.current?.focus(), 100);
+      focusInput();
     }
-  }, [loading, activeId, conversations, upsertConv, resetInput, settings.model, settings.systemPrompt]);
+  }, [effectiveModel, signedIn, settings.systemPrompt, focusInput]);
+
+  const sendMessage = useCallback((text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || loading || exhausted) return;
+
+    // Mesaj sayacini artir (login popup icin)
+    if (!session) {
+      const count = parseInt(localStorage.getItem(LS_MSG_COUNT) ?? '0', 10);
+      localStorage.setItem(LS_MSG_COUNT, String(count + 1));
+    }
+
+    const conv: Conversation = conversations.find(c => c.id === activeId)
+      ?? { id: uid(), title: trimmed.slice(0, 50), messages: [], updatedAt: Date.now() };
+    const userMsg: Message = { id: uid(), role: 'user', text: trimmed };
+    setFreshIds(prev => new Set(prev).add(userMsg.id));
+    setActiveId(conv.id);
+    resetInput();
+    void runCompletion(conv, [...conv.messages, userMsg]);
+  }, [loading, exhausted, activeId, conversations, resetInput, runCompletion, session]);
+
+  // Son yaniti at ve ayni soruyu tekrar sor (hata sonrasi da bunu kullanir)
+  const retryLast = useCallback(() => {
+    if (loading || exhausted || !activeConv) return;
+    const msgs = activeConv.messages;
+    if (msgs[msgs.length - 1]?.role !== 'ai') return;
+    void runCompletion(activeConv, msgs.slice(0, -1));
+  }, [loading, exhausted, activeConv, runCompletion]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(input); }
+    // isComposing: Japonca, Cince gibi dillerde Enter secimi onaylar, mesaji gondermez
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendMessage(input); }
   }, [sendMessage, input]);
 
-  const closePopup = useCallback(() => {
-    setShowPopup(false); localStorage.setItem(LS_POPUP, 'true');
+  const usePrompt = useCallback((p: string) => {
+    setInput(p);
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    requestAnimationFrame(() => resizeTextarea(el));
+  }, [resizeTextarea]);
+
+  const closeDesktopPopup = useCallback(() => {
+    setShowDesktopPopup(false); localStorage.setItem(LS_POPUP, 'true');
   }, []);
 
-  const handlePromptClick = useCallback((p: string) => {
-    setInput(p); inputRef.current?.focus();
-  }, []);
+  // Escape: acik modal ya da mobil cekmeceyi kapat (onizleme kendi dinleyicisini kullanir)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (showSettings) setShowSettings(false);
+      else if (showLoginPopup) closeLoginPopup();
+      else if (showDesktopPopup) closeDesktopPopup();
+      else if (sidebarOpen) setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showSettings, showLoginPopup, showDesktopPopup, sidebarOpen, closeLoginPopup, closeDesktopPopup]);
+
+  const modelShort = MODEL_SHORT_MAP[effectiveModel];
+  const toggleTheme = () => setSettings(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
+  const isEmpty = messages.length === 0;
+  const hasChats = conversations.length > 0;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className={`flex h-screen ${tc.bg} ${tc.text} font-sans overflow-hidden relative transition-colors duration-300`}>
+    <GateContext.Provider value={gate}>
+    <div className="flex h-dvh bg-y-canvas text-y-ink font-sans overflow-hidden relative">
+      {showLoginPopup && !session && <LoginPopup onClose={closeLoginPopup} t={t} guestLimit={guestLimit} userLimit={userLimit} />}
 
-      {/* Settings Modal */}
       {showSettings && (
-        <SettingsModal
-          settings={settings}
-          onSave={setSettings}
-          onClose={() => setShowSettings(false)}
-          onDeleteAll={deleteAllConversations}
-          onExport={exportConversations}
-        />
+        <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)}
+          onDeleteAll={deleteAllConversations} onExport={exportConversations} t={t} usage={usage} />
       )}
 
-      {/* Download Popup */}
-      {showPopup && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={(e) => e.target === e.currentTarget && closePopup()}>
-          <div className="relative w-full max-w-md bg-[#111] border border-gray-700 rounded-2xl shadow-2xl p-6 text-center">
-            <button onClick={closePopup} className="absolute top-3 right-3 text-gray-400 hover:text-white p-1" aria-label="Kapat"><X size={22} /></button>
-            <div className="flex justify-center mb-4"><div className="bg-blue-600/20 p-4 rounded-full border border-blue-500/20"><Monitor className="w-8 h-8 text-blue-400" /></div></div>
-            <h2 className="text-xl font-bold text-white mb-2">Masaustu Uygulamasi Cikti!</h2>
-            <p className="text-gray-400 mb-6 text-sm">Yaman AI&apos;yi daha hizli kullanmak icin Windows uygulamasini indir.</p>
-            <div className="flex flex-col gap-3">
-              <a href="/download/YamanAISetup.exe" download className="w-full py-3 px-4 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold rounded-lg transition-all shadow-lg flex items-center justify-center gap-2">
-                <MonitorDown size={18} /> Windows Icin Indir
-              </a>
-              <button onClick={closePopup} className="text-gray-500 hover:text-gray-300 text-xs underline underline-offset-4">Hayir, tarayicida devam et</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showDesktopPopup && <DesktopPopup onClose={closeDesktopPopup} t={t} />}
 
       {/* Mobile Overlay */}
-      {sidebarOpen && <div className="fixed inset-0 z-30 bg-black/60 md:hidden" onClick={() => setSidebarOpen(false)} />}
+      {sidebarOpen && <div className="y-backdrop fixed inset-0 z-30 bg-[#070C1E]/60 md:hidden" aria-hidden="true" onClick={() => setSidebarOpen(false)} />}
 
       {/* Sidebar */}
-      <aside className={`fixed md:relative z-40 md:z-auto top-0 left-0 h-full flex flex-col w-[260px] ${tc.sidebar} border-r ${tc.border} flex-shrink-0 transition-transform duration-300 ease-in-out ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="flex items-center justify-between p-3 md:hidden border-b border-gray-800">
-          <span className="font-semibold text-sm text-gray-300">YamanAI</span>
-          <button onClick={() => setSidebarOpen(false)} className="text-gray-400 hover:text-white p-1"><X size={20} /></button>
-        </div>
-        <div className="p-3 flex flex-col gap-2">
-          <button onClick={startNewChat} className="flex items-center gap-3 px-3 py-2.5 w-full text-sm bg-transparent hover:bg-white/10 border border-gray-700 hover:border-gray-600 rounded-lg transition-all">
-            <Plus size={16} /><span>Yeni Sohbet</span>
-          </button>
-          <a href="/download/YamanAISetup.exe" download className="flex items-center gap-3 px-3 py-2.5 w-full text-sm text-blue-400 hover:text-blue-300 bg-blue-900/10 hover:bg-blue-900/20 border border-blue-900/30 hover:border-blue-500/50 rounded-lg transition-all">
-            <MonitorDown size={16} /><span>Uygulamayi Indir</span>
-          </a>
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 py-1">
-          <SidebarGroup label="Bugun"   convs={today}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} />
-          <SidebarGroup label="Dun"     convs={yesterday} activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} />
-          <SidebarGroup label="Eskiler" convs={older}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} />
-          {conversations.length === 0 && <p className="text-xs text-gray-600 text-center px-4 pt-8">Henuz sohbet yok</p>}
-        </div>
-        <div className="border-t border-gray-800 p-3">
-          <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer transition-colors">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-400 flex items-center justify-center text-[10px] font-bold text-black flex-shrink-0">YA</div>
-            <div className="flex flex-col overflow-hidden">
-              <span className="text-sm font-medium truncate">Misafir Kullanici</span>
-              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tighter">YamanAI Free</span>
-            </div>
+      <aside aria-label={t.chats}
+        className={`y-on-side fixed md:relative z-40 md:z-auto top-0 left-0 h-full flex flex-col w-[288px] max-w-[85vw] bg-y-side text-y-side-ink flex-shrink-0 transition-[transform,visibility] duration-250 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 max-md:invisible'}`}>
+        <div className="flex items-center justify-between h-14 px-4">
+          <div className="flex items-center gap-2.5">
+            <LogoMark size={28} />
+            <span className="font-extrabold text-xl tracking-tight">YamanAI</span>
+            <span className="text-xs font-semibold text-y-side-muted border border-y-side-line px-1.5 rounded-md">{t.beta}</span>
           </div>
+          <button onClick={() => setSidebarOpen(false)} aria-label={t.closeMenu} className={`md:hidden ${SIDE_ICON_BTN}`}><X size={18} /></button>
+        </div>
+
+        <div className="px-3 pt-1 pb-2">
+          <button onClick={startNewChat}
+            className="flex items-center justify-center gap-2 px-3 h-11 w-full font-bold text-white bg-y-accent hover:bg-y-accent-hover rounded-full transition-colors duration-150">
+            <Plus size={18} /><span>{t.newChat}</span>
+          </button>
+        </div>
+
+        {conversations.length >= SEARCH_AFTER && (
+          <div className="relative px-3 pt-1">
+            <label htmlFor="chat-search" className="sr-only">{t.searchChats}</label>
+            <Search size={15} aria-hidden="true" className="absolute left-6 top-1/2 translate-y-[-30%] text-y-side-muted pointer-events-none" />
+            <input id="chat-search" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t.searchChats}
+              className="w-full h-10 pl-9 pr-3 rounded-full bg-y-side-hover text-y-side-ink placeholder:text-y-side-muted text-[15px] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
+          </div>
+        )}
+
+        <nav aria-label={t.history} className="flex-1 overflow-y-auto px-2 pb-3">
+          <SidebarGroup label={t.today}     convs={today}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
+          <SidebarGroup label={t.yesterday} convs={yesterday} activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
+          <SidebarGroup label={t.older}     convs={older}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
+          {!hasChats && <p className="text-[15px] leading-relaxed text-y-side-muted px-3 pt-5">{t.emptyHistory}</p>}
+          {hasChats && visible.length === 0 && <p className="text-[15px] text-y-side-muted px-3 pt-5">{t.noMatches}</p>}
+        </nav>
+
+        <div className="border-t border-y-side-line p-3 space-y-1">
+          {desktopOffer && (
+            <a href={DOWNLOAD_URL} download
+              className="flex items-center gap-3 px-3 min-h-11 rounded-xl text-[15px] font-medium hover:bg-y-side-hover transition-colors duration-150">
+              <MonitorDown size={17} className="text-y-side-muted flex-shrink-0" /> {t.downloadApp}
+            </a>
+          )}
+
+          {session ? (
+            <div className="flex items-center gap-3 p-2 rounded-xl">
+              {session.user?.image
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={session.user.image} alt="" className="size-8 rounded-full flex-shrink-0" />
+                : <div className="size-8 rounded-full bg-y-side-active flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {session.user?.name?.[0]?.toUpperCase() ?? 'U'}
+                  </div>
+              }
+              <div className="flex flex-col overflow-hidden min-w-0 flex-1">
+                <span className="text-sm font-semibold truncate">{session.user?.name ?? t.user}</span>
+                <span className="text-xs text-y-side-muted truncate">{session.user?.email}</span>
+              </div>
+              <button onClick={() => signOut({ callbackUrl: '/' })} title={t.signOut} aria-label={t.signOut} className={`${SIDE_ICON_BTN} size-8 flex-shrink-0`}>
+                <LogOut size={15} />
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setShowLoginPopup(true)}
+              className="w-full flex items-center gap-3 px-3 min-h-12 rounded-xl hover:bg-y-side-hover text-left transition-colors duration-150">
+              <LogIn size={17} className="text-y-side-muted flex-shrink-0" />
+              <span className="min-w-0">
+                <span className="block text-[15px] font-medium">{t.signIn}</span>
+                <span className="block text-xs text-y-side-muted">{t.signInSub(userLimit)}</span>
+              </span>
+            </button>
+          )}
+          {usage && (
+            <p className="px-3 pt-1 text-xs text-y-side-muted tabular-nums">{t.usageToday(Math.min(usage.used, usage.limit), usage.limit)}</p>
+          )}
         </div>
       </aside>
 
       {/* Main Area */}
-      <div className="flex-1 flex flex-col relative min-w-0">
-
+      <main className="flex-1 flex flex-col relative min-w-0">
         {/* Mobile header */}
-        <header className="flex items-center justify-between p-4 md:hidden border-b border-gray-800 sticky top-0 z-20" style={{ backgroundColor: settings.theme === 'dark' ? '#212121' : '#f5f5f5' }}>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setSidebarOpen(true)} className="text-gray-400 hover:text-white" aria-label="Menu"><Menu size={20} /></button>
-            <span className="font-semibold text-sm truncate max-w-[120px]">{activeConv?.title ?? 'YamanAI'}</span>
+        <header className="flex items-center justify-between h-[52px] px-1.5 md:hidden border-b border-y-line">
+          <div className="flex items-center gap-1 min-w-0">
+            <button onClick={() => setSidebarOpen(true)} aria-label={t.openMenu} className={ICON_BTN}><Menu size={20} /></button>
+            <span className="font-bold text-[15px] truncate">{activeConv?.title ?? 'YamanAI'}</span>
           </div>
-          <div className="flex items-center gap-1">
-            <Link href="/sss" className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="SSS"><HelpCircle size={18} /></Link>
-            <button onClick={() => setShowSettings(true)} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Ayarlar"><Settings size={18} /></button>
-            <button onClick={startNewChat} className="text-gray-400 hover:text-white p-2 rounded-lg hover:bg-white/10 transition-colors" aria-label="Yeni sohbet"><Plus size={18} /></button>
+          <div className="flex items-center flex-shrink-0">
+            <Link href="/sss" aria-label={t.faq} className={ICON_BTN}><HelpCircle size={18} /></Link>
+            <button onClick={() => setShowSettings(true)} aria-label={t.settings} className={ICON_BTN}><Settings size={18} /></button>
+            <button onClick={startNewChat} aria-label={t.newChat} className={ICON_BTN}><Plus size={18} /></button>
           </div>
         </header>
 
-        {/* Desktop header bar with model badge + icons */}
-        <div className="hidden md:flex items-center justify-between px-6 p-3 sticky top-0 z-10 backdrop-blur-md" style={{ backgroundColor: settings.theme === 'dark' ? 'rgba(33,33,33,0.9)' : 'rgba(245,245,245,0.9)' }}>
-          <div /> {/* spacer */}
-          <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] text-gray-400 font-medium flex items-center gap-2">
-            <span>{settings.model === 'gpt-4o' ? 'GPT-4o' : 'GPT-4o Mini'}</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-green-500">Online</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <Link
-              href="/sss"
-              className={`group relative ${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`}
-              aria-label="SSS"
-            >
+        {/* Desktop header bar */}
+        <div className={`hidden md:flex items-center justify-between gap-4 h-14 pl-8 pr-5 flex-shrink-0 border-b transition-colors duration-150 ${isEmpty ? 'border-transparent' : 'border-y-line'}`}>
+          <span className="font-bold truncate">{isEmpty ? '' : activeConv?.title}</span>
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <span className="text-sm font-medium text-y-muted mr-2">{modelShort}</span>
+            <button onClick={toggleTheme} aria-label={settings.theme === 'dark' ? t.lightTheme : t.darkTheme} className={ICON_BTN}>
+              {settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <span className={TOOLTIP_CLS} aria-hidden="true">{settings.theme === 'dark' ? t.lightTheme : t.darkTheme}</span>
+            </button>
+            <Link href="/sss" aria-label={t.faq} className={ICON_BTN}>
               <HelpCircle size={18} />
-              <span className="absolute top-full right-0 mt-2 px-2.5 py-1 bg-black/90 text-white text-[11px] font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 shadow-xl border border-white/10 z-50">
-                Sikca Sorulan Sorular
-              </span>
+              <span className={TOOLTIP_CLS} aria-hidden="true">{t.faq}</span>
             </Link>
-            <button
-              onClick={() => setShowSettings(true)}
-              className={`group relative ${tc.textMuted} hover:text-blue-400 p-2 rounded-lg hover:bg-white/10 transition-colors`}
-              aria-label="Ayarlar"
-            >
+            <button onClick={() => setShowSettings(true)} aria-label={t.settings} className={ICON_BTN}>
               <Settings size={18} />
-              <span className="absolute top-full right-0 mt-2 px-2.5 py-1 bg-black/90 text-white text-[11px] font-medium rounded-md whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity duration-200 shadow-xl border border-white/10 z-50">
-                Ayarlar
-              </span>
+              <span className={TOOLTIP_CLS} aria-hidden="true">{t.settings}</span>
             </button>
           </div>
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto pb-48">
-          {messages.length === 0
-            ? <WelcomeScreen onPromptClick={handlePromptClick} />
+        <div ref={scrollerRef} onScroll={onScroll}
+          className={`flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable_both-edges] ${isEmpty ? 'pb-[min(30dvh,280px)]' : 'pb-[196px] md:pb-[204px]'}`}>
+          {isEmpty
+            ? <WelcomeScreen name={firstName} onPromptClick={usePrompt} t={t} />
             : (
-              <div className="flex flex-col">
-                {messages.map((msg, idx) => (
-                  <MessageBubble
-                    key={msg.id}
-                    msg={msg}
-                    isStreaming={loading && idx === messages.length - 1 && msg.role === 'ai'}
-                    fontSize={fontClass}
-                    theme={settings.theme}
-                  />
+              <div ref={threadRef} className="max-w-[808px] mx-auto px-4 md:px-6 pt-7 flex flex-col gap-7" aria-live="polite" aria-busy={streamingHere}>
+                {messages.map((msg) => (
+                  <MessageBubble key={msg.id} msg={msg} fontSize={fontClass} fresh={freshIds.has(msg.id)} t={t}
+                    onRetry={retryLast} isLast={msg.id === lastMsgId} busy={loading || exhausted} />
                 ))}
-                {loading && messages[messages.length - 1]?.role !== 'ai' && (
-                  <div className="py-7 px-4 md:px-12">
-                    <div className="max-w-3xl mx-auto flex gap-6 items-center">
-                      <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center animate-pulse"><Bot size={16} className="text-blue-400" /></div>
-                      <TypingDots />
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
               </div>
             )
           }
         </div>
 
-        {/* Input */}
-        <div className="absolute bottom-0 w-full pt-10 pb-6 px-4" style={{ background: settings.theme === 'dark' ? 'linear-gradient(to top, #212121, #212121e6, transparent)' : 'linear-gradient(to top, #f5f5f5, #f5f5f5e6, transparent)' }}>
-          <div className="max-w-4xl mx-auto">
-            <div className={`relative flex items-end ${tc.input} rounded-3xl border-2 ${settings.theme === 'dark' ? 'border-white/10 focus-within:border-blue-500/60' : 'border-gray-300 focus-within:border-blue-500'} shadow-2xl focus-within:shadow-blue-500/20 focus-within:shadow-2xl transition-all duration-300 focus-within:ring-4 focus-within:ring-blue-500/10`}>
-              <textarea
-                ref={inputRef}
-                className={`w-full bg-transparent ${tc.text} px-6 py-5 pr-16 max-h-[240px] resize-none focus:outline-none placeholder-gray-500 text-[15px] leading-relaxed`}
-                placeholder="YamanAI'a bir seyler sor..."
-                rows={1}
-                value={input}
-                onChange={handleInput}
-                onKeyDown={handleKeyDown}
-                aria-label="Mesaj gir"
-                style={{ minHeight: '64px' }}
+        {/* Ebru plate + composer */}
+        <div className={`y-plate-wrap absolute bottom-0 inset-x-0 z-10 pointer-events-none ${isEmpty ? 'h-[min(34dvh,300px)]' : 'h-[164px] md:h-[150px]'}`}>
+          <EbruPlate seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} theme={settings.theme} />
+        </div>
+
+        <div className="absolute bottom-0 inset-x-0 z-20 px-3 md:px-6 pb-3 pointer-events-none">
+          <div className="max-w-[760px] mx-auto pointer-events-auto">
+            {!atBottom && !isEmpty && (
+              <div className="flex justify-center mb-2">
+                <button type="button" onClick={jumpToBottom} aria-label={t.jumpBottom} title={t.jumpBottom}
+                  className="size-10 rounded-full bg-y-raised text-y-ink flex items-center justify-center shadow-[0_4px_14px_rgb(7_12_30_/_0.25)] hover:bg-y-surface2 transition-colors duration-150">
+                  <ArrowDown size={18} />
+                </button>
+              </div>
+            )}
+
+            {(undo || storageFull) && (
+              <div role="status" className="y-toast flex items-center justify-between gap-4 mb-2 pl-4 pr-1.5 min-h-11 rounded-full bg-y-bubble text-y-bubble-ink text-[15px]">
+                <span className="py-2">{undo ? undo.label : t.storageFull}</span>
+                {undo && (
+                  <button type="button" onClick={() => { setConversations(undo.prev); setActiveId(undo.activeId); setUndo(null); }}
+                    className="min-h-9 px-3 rounded-full font-bold text-[#EBCB7E] hover:bg-white/10 transition-colors duration-150">
+                    {t.undo}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {remaining !== null && remaining <= 3 && (
+              <div role="status" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 mb-2 pl-4 pr-1.5 py-1 min-h-11 rounded-3xl bg-y-bubble text-y-bubble-ink text-[15px]">
+                <span className="py-1">
+                  {!exhausted ? t.usageLeft(remaining)
+                    : signedIn ? t.limitUser(usage!.limit, usage!.resetHours)
+                    : t.limitGuest(usage!.limit)}
+                </span>
+                {!signedIn && (
+                  <button type="button" onClick={requireLogin}
+                    className="min-h-9 px-3 rounded-full font-bold text-[#EBCB7E] hover:bg-white/10 transition-colors duration-150">
+                    {t.usageRaise(userLimit)}
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="relative flex items-end bg-y-surface rounded-[28px] border border-y-line-strong focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
+              <textarea ref={inputRef}
+                aria-label={t.placeholder}
+                dir="auto"
+                disabled={exhausted}
+                className="y-composer-input disabled:cursor-not-allowed block w-full bg-transparent text-y-ink pl-5 md:pl-6 pr-16 py-[18px] max-h-[240px] resize-none placeholder:text-y-subtle text-[16px] md:text-[17px] leading-[1.5]"
+                placeholder={exhausted ? t.limitPlaceholder : t.placeholder}
+                rows={1} value={input} onChange={handleInput} onKeyDown={handleKeyDown}
               />
               <button
                 onClick={loading ? stopGeneration : () => sendMessage(input)}
-                disabled={!loading && !input.trim()}
-                className={`absolute right-3 bottom-3 p-2.5 rounded-xl transition-all duration-200 ${
-                  loading
-                    ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30'
-                    : input.trim()
-                      ? 'bg-blue-600 text-white hover:bg-blue-500 shadow-lg shadow-blue-500/30 active:scale-95'
-                      : 'bg-white/5 text-gray-600 cursor-not-allowed'
-                }`}
-                aria-label={loading ? 'Yaniti durdur' : 'Mesaj gonder'}
-              >
-                {loading ? <StopCircle size={18} /> : <Send size={18} />}
+                disabled={!loading && (!input.trim() || exhausted)}
+                title={loading ? t.stop : t.send}
+                aria-label={loading ? t.stop : t.send}
+                className={`y-hit absolute right-2 bottom-2 size-11 flex items-center justify-center rounded-full transition-colors duration-150 ${
+                  loading ? 'bg-y-bubble text-y-bubble-ink'
+                  : input.trim() && !exhausted ? 'bg-y-accent hover:bg-y-accent-hover text-white'
+                  : 'bg-y-surface2 text-y-subtle cursor-not-allowed'}`}>
+                {loading ? <Square size={14} fill="currentColor" /> : <ArrowUp size={20} strokeWidth={2.5} />}
               </button>
             </div>
-            <p className="text-center mt-3 text-[10px] text-gray-600 uppercase tracking-widest font-bold">
-              YamanAI Beta 1.0 &bull; Powered by OpenAI
+
+            <p className="mx-auto mt-2 w-fit max-w-full px-3 py-0.5 rounded-2xl bg-y-canvas text-center text-xs leading-snug text-y-muted">
+              <span className="hidden sm:inline"><kbd className="font-sans font-bold">Enter</kbd> {t.hintSend} · <kbd className="font-sans font-bold">Shift + Enter</kbd> {t.hintLine} · </span>
+              {t.disclosure}
             </p>
           </div>
         </div>
-      </div>
+      </main>
     </div>
+    </GateContext.Provider>
   );
 }

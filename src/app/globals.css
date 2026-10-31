@@ -1,26 +1,196 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-code), ui-monospace, monospace;
+
+  /* YamanAI arayuz tokenlari (degerler html[data-theme] altinda) */
+  --color-y-canvas: var(--y-canvas);
+  --color-y-surface: var(--y-surface);
+  --color-y-surface2: var(--y-surface2);
+  --color-y-raised: var(--y-raised);
+  --color-y-ink: var(--y-ink);
+  --color-y-muted: var(--y-muted);
+  --color-y-subtle: var(--y-subtle);
+  --color-y-line: var(--y-line);
+  --color-y-line-strong: var(--y-line-strong);
+  --color-y-accent: var(--y-accent);
+  --color-y-accent-hover: var(--y-accent-hover);
+  --color-y-accent-ink: var(--y-accent-ink);
+  --color-y-link: var(--y-focus);
+  --color-y-danger: var(--y-danger);
+  --color-y-bubble: var(--y-bubble);
+  --color-y-bubble-ink: var(--y-bubble-ink);
+
+  /* Kenar cubugu: acik temada koyu kagit, koyu temada lacivert */
+  --color-y-side: var(--y-side);
+  --color-y-side-ink: var(--y-side-ink);
+  --color-y-side-muted: var(--y-side-muted);
+  --color-y-side-line: var(--y-side-line);
+  --color-y-side-hover: var(--y-side-hover);
+  --color-y-side-active: var(--y-side-active);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─── Tema ───────────────────────────────────────────────────────────────── */
+
+:root {
+  --y-accent: #C8452F;
+  --y-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
+  --y-canvas: #F4F1EA;
+  --y-surface: #FFFFFF;
+  --y-surface2: #E9E4D8;
+  --y-raised: #FFFFFF;
+  --y-ink: #141B33;
+  --y-muted: #474F6C;
+  --y-subtle: #5A6280;
+  --y-line: rgb(16 27 61 / 0.14);
+  --y-line-strong: rgb(16 27 61 / 0.32);
+  --y-accent-hover: #AE3823;
+  --y-accent-ink: #A23019;
+  --y-danger: #A8281A;
+  --y-focus: #1E6A70;
+  --y-bubble: #101B3D;
+  --y-bubble-ink: #F4F1EA;
+  --y-side: #E9E4D8;
+  --y-side-ink: #141B33;
+  --y-side-muted: #474F6C;
+  --y-side-line: rgb(16 27 61 / 0.16);
+  --y-side-hover: #DDD7C8;
+  --y-side-active: #D0C9B7;
+  --y-side-focus: #1E6A70;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --y-canvas: #0B1228;
+  --y-surface: #141D3A;
+  --y-surface2: #1E2A50;
+  --y-raised: #18223F;
+  --y-ink: #F0EDE4;
+  --y-muted: #B4BBD3;
+  --y-subtle: #99A2C0;
+  --y-line: rgb(244 241 234 / 0.13);
+  --y-line-strong: rgb(244 241 234 / 0.3);
+  --y-accent-hover: #D9553E;
+  --y-accent-ink: #F2997F;
+  --y-danger: #F2876F;
+  --y-focus: #7FD1D6;
+  --y-bubble: #26356F;
+  --y-bubble-ink: #F4F1EA;
+  --y-side: #101B3D;
+  --y-side-ink: #F4F1EA;
+  --y-side-muted: #AEB7D6;
+  --y-side-line: rgb(244 241 234 / 0.14);
+  --y-side-hover: #1B2858;
+  --y-side-active: #26356F;
+  --y-side-focus: #E9C46A;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--y-canvas);
+  color: var(--y-ink);
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  caret-color: var(--y-accent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--y-line-strong) transparent;
+}
+
+::selection {
+  background: #D9A441;
+  color: #101B3D;
+}
+
+:focus-visible {
+  outline: 2px solid var(--y-focus);
+  outline-offset: 2px;
+}
+
+.y-on-side :focus-visible {
+  outline-color: var(--y-side-focus);
+}
+
+/* Odak halkasini yuvarlak kutu ciziyor, textarea'nin dikdortgeni degil */
+.y-composer-input:focus-visible {
+  outline: none;
+}
+
+[role='dialog']:focus-visible {
+  outline: none;
+}
+
+/* Genis tiklama alani odak halkasini sisirmesin */
+.y-hit:focus-visible::after {
+  display: none;
+}
+
+/* Duz yazi okunur genislikte kalir; kod ve tablolar tum sutunu kullanir */
+.y-prose > :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-width: 72ch;
+}
+
+/* ─── Bilesenler ─────────────────────────────────────────────────────────── */
+
+@layer components {
+  /* En az 44x44 px tiklama alani; gorunur boyutu degistirmez */
+  .y-hit { position: relative; }
+  .y-hit::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+
+  /* Ebru plakasi: uste dogru kagida karisir, altindaki yazi okunmaz olmadan kaybolur */
+  .y-plate {
+    -webkit-mask-image: linear-gradient(to top, #000 84%, transparent);
+    mask-image: linear-gradient(to top, #000 84%, transparent);
+  }
+
+  .y-plate-wrap { transition: height 280ms var(--y-ease-out); }
+
+  .y-msg-new { animation: y-rise 240ms var(--y-ease-out) backwards; }
+
+  /* Modallar ve mobil cekmece arka plani */
+  .y-backdrop { animation: y-fade 180ms ease-out backwards; }
+  .y-panel    { animation: y-pop 240ms var(--y-ease-out) backwards; }
+
+  /* Yanit beklenirken suya dusen tek damla */
+  .y-drop { animation: y-drop 1.6s var(--y-ease-out) infinite; }
+
+  .y-toast { animation: y-rise 200ms var(--y-ease-out) backwards; }
+
+  /* Sozdizimi renklendirme, kod bloklari iki temada da lacivert */
+  .y-code { background: #101B3D; color: #E8E6F0; }
+  .y-code ::selection { background: #D9A441; color: #101B3D; }
+}
+
+@keyframes y-rise {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes y-fade {
+  from { opacity: 0; }
+}
+@keyframes y-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+}
+@keyframes y-drop {
+  0% { transform: scale(0.35); opacity: 1; }
+  100% { transform: scale(1); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .y-msg-new, .y-toast { animation: none; }
+  .y-panel, .y-backdrop { animation: y-fade 120ms ease-out backwards; }
+  .y-drop { animation: none; transform: scale(0.7); opacity: 0.7; }
+  .y-plate-wrap { transition: none; }
 }

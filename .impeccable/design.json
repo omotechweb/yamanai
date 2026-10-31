@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-31T12:00:00.000Z",
+  "title": "Design System: YamanAI",
+  "extensions": {
+    "colorMeta": {
+      "madder": { "role": "primary", "displayName": "Madder", "canonical": "#C8452F", "tonalRamp": ["#3D130C", "#5E1D12", "#832917", "#AE3823", "#C8452F", "#DC6E5B", "#ECA597", "#F8DAD4"] },
+      "indigo": { "role": "secondary", "displayName": "Indigo", "canonical": "#101B3D", "tonalRamp": ["#070C1E", "#101B3D", "#1B2858", "#26356F", "#3A4E93", "#7C8FD6", "#AEB7D6", "#DDE1EF"] },
+      "ochre": { "role": "tertiary", "displayName": "Ochre", "canonical": "#D9A441", "tonalRamp": ["#3D2C0B", "#5E4411", "#835F18", "#AE7F20", "#D9A441", "#E9C46A", "#F1DBA3", "#F9EFD6"] },
+      "teal": { "role": "tertiary", "displayName": "Teal", "canonical": "#2F7F86", "tonalRamp": ["#0C2729", "#143D41", "#1E6A70", "#2F7F86", "#4E9EA5", "#7FD1D6", "#B1E4E7", "#DFF4F5"] },
+      "paper": { "role": "neutral", "displayName": "Paper", "canonical": "#F4F1EA", "tonalRamp": ["#3B382F", "#5C5849", "#7F7A68", "#A39D8A", "#C4BEAB", "#D0C9B7", "#E9E4D8", "#F4F1EA"] },
+      "night": { "role": "neutral", "displayName": "Night", "canonical": "#0B1228", "tonalRamp": ["#0B1228", "#141D3A", "#18223F", "#1E2A50", "#26356F", "#8791B3", "#B4BBD3", "#F0EDE4"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "The empty-chat greeting and page titles." },
+      "title": { "displayName": "Title", "purpose": "Dialog and chat titles." },
+      "body": { "displayName": "Body", "purpose": "Answers, capped at 72ch for prose." },
+      "label": { "displayName": "Label", "purpose": "Controls and list rows." },
+      "code": { "displayName": "Code", "purpose": "Code only." }
+    },
+    "shadows": [
+      { "name": "dialog", "value": "0 18px 50px rgb(7 12 30 / 0.35)", "purpose": "Dialogs and sheets." },
+      { "name": "float", "value": "0 4px 14px rgb(7 12 30 / 0.25)", "purpose": "The jump-to-latest button." }
+    ],
+    "motion": [
+      { "name": "ease-out", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "State changes, 150 to 250ms." }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The action you are most likely to take.",
+      "html": "<button class=\"ds-btn-primary\">Yeni Sohbet</button>",
+      "css": ".ds-btn-primary { background: #C8452F; color: #fff; min-height: 44px; padding: 0 24px; border: 0; border-radius: 9999px; font-weight: 700; transition: background-color 150ms; } .ds-btn-primary:hover { background: #AE3823; } .ds-btn-primary:focus-visible { outline: 2px solid #1E6A70; outline-offset: 2px; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "description": "Lower-priority actions.",
+      "html": "<button class=\"ds-btn-secondary\">Sohbetleri dışa aktar</button>",
+      "css": ".ds-btn-secondary { background: transparent; color: #141B33; min-height: 44px; padding: 0 16px; border: 1px solid rgb(16 27 61 / 0.32); border-radius: 9999px; font-weight: 600; transition: background-color 150ms; } .ds-btn-secondary:hover { background: #E9E4D8; } .ds-btn-secondary:focus-visible { outline: 2px solid #1E6A70; outline-offset: 2px; }"
+    },
+    {
+      "name": "Composer",
+      "kind": "input",
+      "description": "Where every conversation starts.",
+      "html": "<div class=\"ds-composer\"><textarea rows=\"1\" placeholder=\"YamanAI'a bir şey sor…\"></textarea></div>",
+      "css": ".ds-composer { background: #fff; border: 1px solid rgb(16 27 61 / 0.32); border-radius: 28px; padding: 18px 24px; } .ds-composer:focus-within { outline: 2px solid #1E6A70; outline-offset: 2px; } .ds-composer textarea { width: 100%; border: 0; outline: 0; resize: none; background: transparent; font: inherit; }"
+    },
+    {
+      "name": "Limit Notice",
+      "kind": "custom",
+      "description": "Appears when three or fewer messages remain today.",
+      "html": "<div class=\"ds-limit\"><span>Bugün 2 mesaj hakkın kaldı.</span><button>Giriş yap, 50 mesaja çıkar</button></div>",
+      "css": ".ds-limit { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: #101B3D; color: #F4F1EA; border-radius: 24px; padding: 4px 6px 4px 16px; } .ds-limit button { background: transparent; border: 0; color: #EBCB7E; font-weight: 700; min-height: 36px; padding: 0 12px; border-radius: 9999px; } .ds-limit button:hover { background: rgb(255 255 255 / 0.1); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Marbling Tray",
+    "overview": "Ebru is ink floated on water and combed into a pattern no one can repeat. YamanAI borrows that one idea and leaves everything else to a familiar chat layout: a history sidebar, a reading column, and a box to type in. Anyone who has used a chat assistant should know where everything is before they notice the ink.\n\nThe ink is a real simulation, not a picture. Each chat has its own plate, every answer adds to it, and it only moves while an answer is arriving. Everything around it stays quiet so that long reading is comfortable.",
+    "keyCharacteristics": [
+      "One live marbled band behind the composer, and nowhere else in the working screen",
+      "Warm paper by day, deep indigo by night",
+      "One highly legible typeface for all interface and reading text",
+      "Madder red reserved for the action you are most likely to take"
+    ],
+    "rules": [
+      { "name": "The One Red Rule", "body": "Red asks for an action. List markers, headings, open states and hover states never use it.", "section": "colors" },
+      { "name": "The Tinted Neutral Rule", "body": "No stock greys; neutrals come from the indigo and paper of the world.", "section": "colors" },
+      { "name": "The No Costume Rule", "body": "Monospace is for code. Labels, counters and dates use the interface face, with tabular numerals.", "section": "typography" }
+    ],
+    "dos": [
+      "Do keep the composer and its text on opaque surfaces whenever they sit above ink.",
+      "Do say plainly that messages are sent to OpenAI.",
+      "Do keep destructive actions apart from everything else, and offer undo."
+    ],
+    "donts": [
+      "Don't use decorative gradients, sparkle icons, or gradient text.",
+      "Don't add small uppercase labels above headings.",
+      "Don't let the ink move when nothing is happening.",
+      "Don't put text directly on ink."
+    ]
+  }
+}

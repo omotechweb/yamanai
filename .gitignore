@@ -20,6 +20,14 @@
 # production
 /build
 
+# electron build ciktisi (GitHub dosya sinirini asar)
+/dist/
+__pycache__/
+
+# gecici tasarim calisma dosyalari
+/.impeccable/mocks/
+/.impeccable/review/
+
 # misc
 .DS_Store
 *.pem
