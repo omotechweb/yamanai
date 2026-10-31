@@ -731,7 +731,11 @@ export default function Home() {
   // Her jetonda degil, yazma durulunca kaydet.
   useEffect(() => {
     if (!hydrated) return;
+    let pending = true;
     const save = () => {
+      // Yalnizca bekleyen degisikligi yaz: kapanan eski sekme diger sekmenin kaydini ezmesin
+      if (!pending) return;
+      pending = false;
       try {
         localStorage.setItem(LS_KEY, JSON.stringify(conversations));
         setStorageFull(false);
