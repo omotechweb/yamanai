@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Atkinson_Hyperlegible_Next, JetBrains_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
+import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from '@/lib/site';
 
 // latin-ext zorunlu: Turkce ş, ğ, ı, İ bu alt kumede
 const uiFont = Atkinson_Hyperlegible_Next({
@@ -15,8 +16,44 @@ const codeFont = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'YamanAI',
-  description: 'YamanAI: ücretsiz yapay zekâ asistanı. Free AI assistant, no account needed.',
+  metadataBase: new URL(SITE_URL),
+  title: { default: SITE_TITLE, template: `%s | ${SITE_NAME}` },
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
+  // Alt sayfalar kendi layout dosyalarinda bunu ezer
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    url: '/',
+    locale: 'tr_TR',
+  },
+  twitter: { card: 'summary_large_image', title: SITE_TITLE, description: SITE_DESCRIPTION },
+};
+
+// Google'in site adini ve kurulusu tanimasi icin
+const STRUCTURED_DATA = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: SITE_NAME,
+      alternateName: ['Yaman AI'],
+      inLanguage: 'tr',
+      publisher: { '@id': `${SITE_URL}/#organization` },
+    },
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#organization`,
+      url: `${SITE_URL}/`,
+      name: SITE_NAME,
+      logo: `${SITE_URL}/icon.svg`,
+    },
+  ],
 };
 
 export const viewport: Viewport = {
@@ -40,6 +77,7 @@ export default function RootLayout({
     <html lang="tr" data-theme="light" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }} />
       </head>
       <body className={`${uiFont.variable} ${codeFont.variable} antialiased`}>
         <Providers>{children}</Providers>

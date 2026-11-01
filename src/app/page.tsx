@@ -466,9 +466,10 @@ MessageBubble.displayName = 'MessageBubble';
 
 const WelcomeScreen = memo(({ onPromptClick, name, t }: { onPromptClick: (p: string) => void; name?: string; t: Strings }) => (
   <div className="min-h-full flex flex-col justify-center max-w-[760px] mx-auto px-4 md:px-6 pt-8 pb-6">
-    <h1 className="text-[32px] md:text-[44px] font-bold tracking-[-0.02em] leading-[1.1] text-balance">
+    <h1 className="text-[15px] font-bold text-y-muted mb-3">{t.brandLine}</h1>
+    <p className="text-[32px] md:text-[44px] font-bold tracking-[-0.02em] leading-[1.1] text-balance">
       {name ? t.greetingName(name) : t.greeting}
-    </h1>
+    </p>
     <p className="text-y-muted mt-3 text-[17px] leading-relaxed max-w-[52ch]">{t.greetingSub}</p>
 
     <section aria-labelledby="prompt-title" className="mt-8">
@@ -485,6 +486,13 @@ const WelcomeScreen = memo(({ onPromptClick, name, t }: { onPromptClick: (p: str
         ))}
       </ul>
     </section>
+
+    {!name && (
+      <section aria-labelledby="about-title" className="mt-8">
+        <h2 id="about-title" className="font-bold">{t.aboutTitle}</h2>
+        <p className="text-[15px] text-y-muted mt-1.5 leading-relaxed max-w-[65ch]">{t.aboutBody}</p>
+      </section>
+    )}
   </div>
 ));
 WelcomeScreen.displayName = 'WelcomeScreen';
@@ -801,7 +809,10 @@ export default function Home() {
 
   useEffect(() => {
     const el = scrollerRef.current;
-    if (el && stuckRef.current) el.scrollTop = el.scrollHeight;
+    if (!el) return;
+    // Karsilama ekrani uzun olabilir, her zaman en ustten baslasin
+    if (messages.length === 0) el.scrollTop = 0;
+    else if (stuckRef.current) el.scrollTop = el.scrollHeight;
   }, [messages, loading]);
 
   // Kod renklendirici gibi gec yuklenen icerik yuksekligi degistirince de altta kal
