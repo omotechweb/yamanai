@@ -6,6 +6,7 @@ import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { LogoMark } from '@/components/Mark';
+import { useIsDesktopApp } from '@/lib/desktop';
 import { STRINGS, useLang } from '@/lib/i18n';
 
 // ─── Provider config ─────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ const PROVIDERS = [
 
 function GirisForm() {
   const t = STRINGS[useLang()];
+  const isDesktopApp  = useIsDesktopApp();
   const searchParams  = useSearchParams();
   const errorCode     = searchParams.get('error');
   const errorMessage  = errorCode ? (t.authErrors[errorCode] ?? t.authErrors.Default) : null;
@@ -58,7 +60,7 @@ function GirisForm() {
   return (
     <div className="min-h-dvh bg-y-canvas text-y-ink flex flex-col md:flex-row">
       <div className="bg-y-side text-y-side-ink px-6 py-5 md:w-[288px] md:flex-shrink-0">
-        <Link href="/" className="inline-flex items-center gap-2.5 min-h-11 rounded-lg y-on-side">
+        <Link href="/" tabIndex={isDesktopApp ? -1 : undefined} className={`inline-flex items-center gap-2.5 min-h-11 rounded-lg y-on-side ${isDesktopApp ? 'pointer-events-none' : ''}`}>
           <LogoMark size={30} />
           <span className="font-extrabold text-xl tracking-tight">YamanAI</span>
         </Link>
@@ -67,7 +69,7 @@ function GirisForm() {
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           <h1 className="text-3xl font-bold tracking-tight">{t.loginHeading}</h1>
-          <p className="text-y-muted mt-2 mb-7 leading-relaxed">{t.loginSub}</p>
+          <p className="text-y-muted mt-2 mb-7 leading-relaxed">{isDesktopApp ? t.loginSubDesktop : t.loginSub}</p>
 
           {errorMessage && (
             <div role="alert" className="flex items-start gap-3 p-3.5 mb-5 rounded-xl border border-y-danger/40 text-y-danger text-sm">
@@ -93,9 +95,11 @@ function GirisForm() {
             })}
           </div>
 
-          <Link href="/" className="mt-6 inline-flex items-center gap-2 min-h-11 text-sm font-medium text-y-muted hover:text-y-ink rounded-lg transition-colors duration-150">
-            <ArrowLeft size={16} /> {t.backToChat}
-          </Link>
+          {!isDesktopApp && (
+            <Link href="/" className="mt-6 inline-flex items-center gap-2 min-h-11 text-sm font-medium text-y-muted hover:text-y-ink rounded-lg transition-colors duration-150">
+              <ArrowLeft size={16} /> {t.backToChat}
+            </Link>
+          )}
         </div>
       </main>
     </div>

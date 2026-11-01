@@ -43,9 +43,9 @@ export const authOptions: NextAuthOptions = {
       return session;
     },
 
-    // Giris sonrasi yonlendirme
-    async redirect({ baseUrl }) {
-      return baseUrl + '/'; // her zaman ana sayfaya don
+    // Giris sonrasi yonlendirme: masaustu aktarimi disinda her zaman ana sayfaya don
+    async redirect({ url, baseUrl }) {
+      return url.startsWith(`${baseUrl}/api/desktop/complete?`) ? url : baseUrl + '/';
     },
   },
 

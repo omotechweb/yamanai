@@ -156,6 +156,9 @@ History rows are 40px tall with a 20px round crop of that chat's own ink. The se
 ### Locked features
 Features that need sign-in stay visible with a lock icon. Choosing one opens the sign-in dialog, which lists what signing in adds.
 
+### Voice bar
+Pressing the microphone in the composer replaces the composer with a bar of the same shape while voice chat is on. It states what is happening in words, lets you interrupt the answer, and ends with one button or Escape. The spoken conversation stays readable as text above it, and the line below says that speech goes to OpenAI and that the voice is AI-generated.
+
 ### Limit notice
 An indigo strip above the composer appears when three or fewer messages remain, and says when the limit renews or how to raise it.
 

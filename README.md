@@ -20,6 +20,21 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Masaüstü uygulaması (Windows)
+
+Uygulama `electron/` altındadır ve canlı siteyi (`https://yamanai.net`) kendi penceresinde açar. Pakete API anahtarı veya sunucu kodu girmez; sitedeki güncellemeler yeniden kurulum gerektirmez. Giriş, kullanıcının kendi tarayıcısında yapılır ve oturum uygulamaya aktarılır (`src/lib/desktopAuth.ts`).
+
+```bash
+npm run electron:start   # canlı siteye bağlanır
+npm run electron:dev     # yerel next dev sunucusuna bağlanır
+npm run electron:icon    # src/app/icon.svg dosyasından electron/icon.ico üretir
+npm run electron:build   # dist/YamanAISetup.exe üretir
+```
+
+Sitedeki indirme düğmesi `public/download/YamanAISetup.exe` dosyasını sunar; yeni sürümü yayınlamak için `dist/YamanAISetup.exe` dosyasını oraya kopyala.
+
+Derleme `Cannot create symbolic link` hatasıyla durursa Windows Ayarları'ndan Geliştirici Modu'nu aç veya `winCodeSign` paketini macOS dosyaları hariç `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign\winCodeSign-2.6.0` klasörüne aç.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

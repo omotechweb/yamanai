@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>YamanAI</title>
+<style>
+  :root { color-scheme: light dark; --bg: #F4F1EA; --ink: #101B3D; --muted: #5A6178; --accent: #C8452F; --accent-hover: #A8381F; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0B1228; --ink: #F4F1EA; --muted: #A9AFC2; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); color: var(--ink); font-family: "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 26rem; }
+  svg { width: 48px; height: 48px; display: block; margin-bottom: 20px; }
+  h1 { margin: 0 0 8px; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; }
+  p { margin: 0 0 24px; line-height: 1.6; color: var(--muted); }
+  button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 999px; background: var(--accent); color: #fff; font: 600 1rem "Segoe UI", system-ui, sans-serif; cursor: pointer; transition: background-color 150ms; }
+  button:hover { background: var(--accent-hover); }
+  button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#C8452F" d="M12 1.5c4.6 5.2 8.5 9.4 8.5 13.6a8.5 8.5 0 0 1-17 0C3.5 10.9 7.4 6.7 12 1.5Z"/><path fill="#F4F1EA" transform="translate(12 16) scale(.72) translate(-12 -16)" d="M12 1.5c4.6 5.2 8.5 9.4 8.5 13.6a8.5 8.5 0 0 1-17 0C3.5 10.9 7.4 6.7 12 1.5Z"/><path fill="#D9A441" transform="translate(12 16) scale(.5) translate(-12 -16)" d="M12 1.5c4.6 5.2 8.5 9.4 8.5 13.6a8.5 8.5 0 0 1-17 0C3.5 10.9 7.4 6.7 12 1.5Z"/><path fill="#101B3D" transform="translate(12 16) scale(.26) translate(-12 -16)" d="M12 1.5c4.6 5.2 8.5 9.4 8.5 13.6a8.5 8.5 0 0 1-17 0C3.5 10.9 7.4 6.7 12 1.5Z"/></svg>
+  <h1 id="title">YamanAI'ya ulaşılamıyor</h1>
+  <p id="body">İnternet bağlantını kontrol edip tekrar dene. Sohbetlerin bu bilgisayarda duruyor, bir şey kaybolmadı.</p>
+  <button id="retry" type="button" autofocus>Tekrar dene</button>
+</main>
+<script>
+  if (!navigator.language.toLowerCase().startsWith('tr')) {
+    document.documentElement.lang = 'en';
+    document.getElementById('title').textContent = "Can't reach YamanAI";
+    document.getElementById('body').textContent = 'Check your internet connection and try again. Your chats are stored on this computer, so nothing is lost.';
+    document.getElementById('retry').textContent = 'Try again';
+  }
+  const retry = () => location.replace(new URLSearchParams(location.search).get('target'));
+  document.getElementById('retry').addEventListener('click', retry);
+  window.addEventListener('online', retry);
+</script>
+</body>
+</html>

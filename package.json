@@ -1,6 +1,6 @@
 {
   "name": "yamannai",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "main": "electron/main.js",
   "scripts": {
@@ -8,8 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-builder"
+    "electron:start": "electron .",
+    "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron . --url=http://localhost:3000\"",
+    "electron:icon": "node scripts/make-icon.mjs",
+    "electron:build": "electron-builder --win"
   },
   "dependencies": {
     "autoprefixer": "^10.4.23",
@@ -45,30 +47,40 @@
     "appId": "com.yamanai.app",
     "productName": "YamanAI",
     "asar": true,
+    "npmRebuild": false,
+    "compression": "maximum",
+    "electronLanguages": [
+      "tr",
+      "en-US"
+    ],
     "directories": {
       "output": "dist"
     },
     "files": [
       "electron/**/*",
-      ".next/**/*",
-      "public/**/*",
-      "node_modules/**/*",
       "package.json",
-      "next.config.*"
+      "!node_modules/**/*"
     ],
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
-      "icon": "electron/icon.ico",
-      "signAndEditExecutable": false
+      "icon": "electron/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "artifactName": "YamanAISetup.${ext}",
+      "installerLanguages": [
+        "tr_TR",
+        "en_US"
+      ],
+      "language": "1055",
       "installerIcon": "electron/icon.ico",
       "uninstallerIcon": "electron/icon.ico",
       "shortcutName": "YamanAI",

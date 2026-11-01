@@ -11,6 +11,8 @@ const envLimit = (value: string | undefined, fallback: number) => {
 
 export const guestDailyLimit = () => envLimit(process.env.GUEST_DAILY_LIMIT, 10);
 export const userDailyLimit = () => envLimit(process.env.USER_DAILY_LIMIT, 50);
+/** Yaziya cevirme ve seslendirme isteklerinin toplami; bir sesli tur birkac istek harcar. */
+export const voiceDailyLimit = () => envLimit(process.env.VOICE_DAILY_LIMIT, 300);
 
 const TTL_SECONDS = 2 * 24 * 60 * 60;
 

@@ -30,6 +30,8 @@ Used in a browser on desktop and mobile, and as a Windows desktop app (Electron 
 - Settings: theme (dark/light), text size, model, custom system prompt, export and delete chats.
 - Google and GitHub sign-in through next-auth. Chatting works without an account, but sign-in raises the daily message limit (10 to 50 by default, set with `GUEST_DAILY_LIMIT` and `USER_DAILY_LIMIT`) and unlocks GPT-4o, custom instructions and live preview. Guests use GPT-4o Mini. Export and delete stay open to everyone.
 - The daily limit is enforced on the server and renews at midnight UTC. Guests are counted by IP address, signed-in users by account. Durable counting across serverless instances needs `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+- Voice chat (microphone button in the composer) is for signed-in users only, on the web and in the desktop app. Speech goes to `/api/voice/transcribe` (OpenAI `gpt-4o-mini-transcribe`), replies are read aloud through `/api/voice/speak` (OpenAI `gpt-4o-mini-tts`). Each spoken question uses one daily message; audio requests also have their own `VOICE_DAILY_LIMIT` (300 by default).
+- The Windows desktop app requires sign-in before anything else. It never shows offers to download the app.
 - FAQ at `/sss`, sign-in page at `/giris`.
 - Stack: Next.js 16, React 19, Tailwind CSS 4, TypeScript.
 - Undecided: pricing beyond "free today", legal pages (terms and privacy are referenced on `/giris` but do not exist).

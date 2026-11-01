@@ -4,6 +4,7 @@ import { useState, useMemo, useCallback, memo } from 'react';
 import { ChevronDown, ArrowLeft, ArrowRight, Search, X, MonitorDown } from 'lucide-react';
 import Link from 'next/link';
 import { LogoMark } from '@/components/Mark';
+import { useIsDesktopApp } from '@/lib/desktop';
 import { STRINGS, useLang, type FaqCategory, type Strings } from '@/lib/i18n';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -47,16 +48,24 @@ FaqRow.displayName = 'FaqRow';
 
 export default function SSSPage() {
   const t = STRINGS[useLang()];
+  const isDesktopApp = useIsDesktopApp();
   const [query, setQuery]       = useState('');
   const [category, setCategory] = useState<'all' | FaqCategory>('all');
   const [openId, setOpenId]     = useState<number | null>(1);
 
+  // Uygulamanin icindeyken uygulamayi indirmeyi anlatan soru gosterilmez
+  const items = useMemo(
+    () => (isDesktopApp ? t.faqItems.filter(item => item.cat !== 'uygulama') : t.faqItems),
+    [t, isDesktopApp],
+  );
+  const categories = isDesktopApp ? CATEGORY_KEYS.filter(key => key !== 'uygulama') : CATEGORY_KEYS;
+
   const filtered = useMemo(() => {
     const q = normalize(query.trim());
-    return t.faqItems.filter(item =>
+    return items.filter(item =>
       (category === 'all' || item.cat === category) &&
       (!q || normalize(item.q).includes(q) || normalize(item.a).includes(q)));
-  }, [t, query, category]);
+  }, [items, query, category]);
 
   const toggle = useCallback((id: number) => setOpenId(prev => (prev === id ? null : id)), []);
   const reset = () => { setQuery(''); setCategory('all'); };
@@ -100,7 +109,7 @@ export default function SSSPage() {
           </div>
 
           <div role="group" aria-label={t.sssCategory} className="mt-4 flex flex-wrap gap-2">
-            {(['all', ...CATEGORY_KEYS] as const).map(key => {
+            {(['all', ...categories] as const).map(key => {
               const active = category === key;
               return (
                 <button key={key} type="button" aria-pressed={active} onClick={() => setCategory(key)}
@@ -113,7 +122,7 @@ export default function SSSPage() {
           </div>
 
           <p className="mt-4 text-sm text-y-subtle" aria-live="polite">
-            {hasFilter ? t.sssResults(filtered.length) : t.sssCount(t.faqItems.length)}
+            {hasFilter ? t.sssResults(filtered.length) : t.sssCount(items.length)}
           </p>
         </div>
 
@@ -146,18 +155,20 @@ export default function SSSPage() {
         </div>
       </main>
 
-      <section aria-labelledby="desktop-title" className="y-on-side mt-20 lg:mt-28 bg-y-side text-y-side-ink">
-        <div className="max-w-[1120px] mx-auto px-4 sm:px-6 py-14 lg:py-20 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
-          <div>
-            <h2 id="desktop-title" className="text-3xl lg:text-4xl font-bold tracking-[-0.02em] text-balance">{t.sssDesktopTitle}</h2>
-            <p className="mt-3 max-w-[55ch] leading-relaxed text-y-side-muted">{t.sssDesktopBody}</p>
+      {isDesktopApp ? <div className="h-16" /> : (
+        <section aria-labelledby="desktop-title" className="y-on-side mt-20 lg:mt-28 bg-y-side text-y-side-ink">
+          <div className="max-w-[1120px] mx-auto px-4 sm:px-6 py-14 lg:py-20 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-8">
+            <div>
+              <h2 id="desktop-title" className="text-3xl lg:text-4xl font-bold tracking-[-0.02em] text-balance">{t.sssDesktopTitle}</h2>
+              <p className="mt-3 max-w-[55ch] leading-relaxed text-y-side-muted">{t.sssDesktopBody}</p>
+            </div>
+            <a href={DOWNLOAD_URL} download
+              className="inline-flex items-center justify-center gap-2.5 min-h-12 px-6 self-start lg:self-auto flex-shrink-0 rounded-full bg-y-accent hover:bg-y-accent-hover text-white font-semibold transition-colors duration-150">
+              <MonitorDown size={18} /> {t.desktopDownload}
+            </a>
           </div>
-          <a href={DOWNLOAD_URL} download
-            className="inline-flex items-center justify-center gap-2.5 min-h-12 px-6 self-start lg:self-auto flex-shrink-0 rounded-full bg-y-accent hover:bg-y-accent-hover text-white font-semibold transition-colors duration-150">
-            <MonitorDown size={18} /> {t.desktopDownload}
-          </a>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
 import {
   Plus, Menu, X, MonitorDown, Copy, Check, Trash2, Play, Search,
   Settings, HelpCircle, Sun, Moon, Download, Type, LogIn, LogOut,
-  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock,
+  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,6 +15,9 @@ import Link from 'next/link';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import EbruPlate from '@/components/EbruPlate';
 import { LogoMark, ChatMark } from '@/components/Mark';
+import { VoiceBar } from '@/components/VoiceBar';
+import { useIsDesktopApp } from '@/lib/desktop';
+import { unlockAudio, voiceSupported, type TurnResult, type VoiceError } from '@/lib/voiceSession';
 import {
   STRINGS, LS_SETTINGS, useLang, notifySettingsChanged,
   type LangPref, type Strings,
@@ -661,6 +664,7 @@ SettingsModal.displayName = 'SettingsModal';
 export default function Home() {
   const { data: session, status: sessionStatus } = useSession();
   const signedIn = !!session;
+  const isDesktopApp = useIsDesktopApp();
   const lang = useLang();
   const t = STRINGS[lang];
 
@@ -681,6 +685,10 @@ export default function Home() {
   const [undo, setUndo]                         = useState<{ label: string; prev: Conversation[]; activeId: string } | null>(null);
   const [usage, setUsage]                       = useState<Usage | null>(null);
   const [storageFull, setStorageFull]           = useState(false);
+  const [canUseVoice, setCanUseVoice]           = useState(false);
+  // Sesli sohbet aciksa, tiklamayla acilmis ses ogesini tutar
+  const [voiceAudio, setVoiceAudio]             = useState<HTMLAudioElement | null>(null);
+  const [voiceNotice, setVoiceNotice]           = useState<VoiceError | null>(null);
   // Bu oturumda gonderilen mesajlar: yalnizca bunlar giris animasyonu alir
   const [freshIds, setFreshIds]                 = useState<Set<string>>(() => new Set());
 
@@ -724,8 +732,14 @@ export default function Home() {
     setActiveId(loaded[0] ? [...loaded].sort((a, b) => b.updatedAt - a.updatedAt)[0].id : '');
     setSettings(loadSettings());
     setDesktopOffer(offersDesktopApp());
+    setCanUseVoice(voiceSupported());
     setHydrated(true);
   }, []);
+
+  // Masaustu uygulamasi girissiz kullanilamaz (cikis yapilinca ya da oturum dolunca da gecerli)
+  useEffect(() => {
+    if (isDesktopApp && sessionStatus === 'unauthenticated') window.location.replace('/giris');
+  }, [isDesktopApp, sessionStatus]);
 
   // Yukleme bitmeden yazma: aksi halde kayitli sohbetlerin ustune bos liste yazilir.
   // Her jetonda degil, yazma durulunca kaydet.
@@ -893,7 +907,8 @@ export default function Home() {
   }, []);
 
   // Yaniti akitir. `base`, modele gonderilecek mesajlardir (son mesaj kullanicinin).
-  const runCompletion = useCallback(async (conv: Conversation, base: Message[]) => {
+  const runCompletion = useCallback(async (conv: Conversation, base: Message[], onVoiceDelta?: (delta: string) => void): Promise<TurnResult> => {
+    let result: TurnResult = 'ok';
     const aiId = uid();
     const convId = conv.id;
     setFreshIds(prev => new Set(prev).add(aiId));
@@ -920,7 +935,7 @@ export default function Home() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: history, model: effectiveModel, customSystemPrompt: (signedIn && settings.systemPrompt) || undefined }),
+        body: JSON.stringify({ messages: history, model: effectiveModel, customSystemPrompt: (signedIn && settings.systemPrompt) || undefined, voice: !!onVoiceDelta }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -928,7 +943,7 @@ export default function Home() {
         const code = data?.error;
         if (code === 'daily_limit') setUsage(toUsage(data));
         patchAi({ status: code === 'rate_limited' || code === 'not_configured' || code === 'daily_limit' ? code : 'generic' });
-        return;
+        return code === 'daily_limit' ? 'daily_limit' : 'failed';
       }
       const usedNow = Number(res.headers.get('X-Usage-Used'));
       if (usedNow) setUsage(prev => prev && { ...prev, used: usedNow });
@@ -943,7 +958,7 @@ export default function Home() {
         if (!js || js === '[DONE]') return;
         try {
           const d: string = JSON.parse(js).delta ?? '';
-          if (d) { acc += d; patchAi({ text: acc }); }
+          if (d) { acc += d; patchAi({ text: acc }); onVoiceDelta?.(d); }
         } catch {}
       };
       while (true) {
@@ -956,19 +971,23 @@ export default function Home() {
           buffer = buffer.slice(idx + 1);
         }
       }
-      if (!acc) patchAi({ status: 'generic' });
+      if (!acc) { patchAi({ status: 'generic' }); result = 'failed'; }
     } catch (err: unknown) {
-      patchAi({ status: (err as Error)?.name === 'AbortError' ? 'stopped' : 'network' });
+      const aborted = (err as Error)?.name === 'AbortError';
+      patchAi({ status: aborted ? 'stopped' : 'network' });
+      result = aborted ? 'stopped' : 'failed';
     } finally {
       setLoading(false); setStreamConvId(null);
       abortControllerRef.current = null;
-      focusInput();
+      if (!onVoiceDelta) focusInput();
     }
+    return result;
   }, [effectiveModel, signedIn, settings.systemPrompt, focusInput]);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, onVoiceDelta?: (delta: string) => void): Promise<TurnResult> => {
     const trimmed = text.trim();
-    if (!trimmed || loading || exhausted) return;
+    if (exhausted) return Promise.resolve('daily_limit');
+    if (!trimmed || loading) return Promise.resolve('failed');
 
     // Mesaj sayacini artir (login popup icin)
     if (!session) {
@@ -982,8 +1001,32 @@ export default function Home() {
     setFreshIds(prev => new Set(prev).add(userMsg.id));
     setActiveId(conv.id);
     resetInput();
-    void runCompletion(conv, [...conv.messages, userMsg]);
+    return runCompletion(conv, [...conv.messages, userMsg], onVoiceDelta);
   }, [loading, exhausted, activeId, conversations, resetInput, runCompletion, session]);
+
+  // Mikrofon dugmesi: giris yoksa giris penceresi acilir, sunucu da ayrica giris ister
+  const startVoice = useCallback(() => {
+    if (!signedIn) { requireLogin(); return; }
+    setVoiceNotice(null);
+    setVoiceAudio(unlockAudio());
+  }, [signedIn, requireLogin]);
+
+  const endVoice = useCallback((error?: VoiceError) => {
+    setVoiceAudio(null);
+    setVoiceNotice(error ?? null);
+    focusInput();
+  }, [focusInput]);
+
+  useEffect(() => {
+    if (!voiceNotice) return;
+    const handle = setTimeout(() => setVoiceNotice(null), UNDO_MS);
+    return () => clearTimeout(handle);
+  }, [voiceNotice]);
+
+  // Oturum kapanirsa mikrofon acik kalmasin
+  useEffect(() => {
+    if (!signedIn) setVoiceAudio(null);
+  }, [signedIn]);
 
   // Son yaniti at ve ayni soruyu tekrar sor (hata sonrasi da bunu kullanir)
   const retryLast = useCallback(() => {
@@ -995,7 +1038,7 @@ export default function Home() {
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // isComposing: Japonca, Cince gibi dillerde Enter secimi onaylar, mesaji gondermez
-    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); sendMessage(input); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(input); }
   }, [sendMessage, input]);
 
   const usePrompt = useCallback((p: string) => {
@@ -1029,6 +1072,9 @@ export default function Home() {
   const hasChats = conversations.length > 0;
 
   // ─── Render ─────────────────────────────────────────────────────────────────
+
+  // Masaustunde oturum dogrulanana kadar sohbet gosterilmez
+  if (isDesktopApp && sessionStatus !== 'authenticated') return <div className="h-dvh bg-y-canvas" />;
 
   return (
     <GateContext.Provider value={gate}>
@@ -1189,9 +1235,9 @@ export default function Home() {
               </div>
             )}
 
-            {(undo || storageFull) && (
+            {(undo || storageFull || voiceNotice) && (
               <div role="status" className="y-toast flex items-center justify-between gap-4 mb-2 pl-4 pr-1.5 min-h-11 rounded-full bg-y-bubble text-y-bubble-ink text-[15px]">
-                <span className="py-2">{undo ? undo.label : t.storageFull}</span>
+                <span className="py-2">{undo ? undo.label : voiceNotice ? t.voiceErrors[voiceNotice] : t.storageFull}</span>
                 {undo && (
                   <button type="button" onClick={() => { setConversations(undo.prev); setActiveId(undo.activeId); setUndo(null); }}
                     className="min-h-9 px-3 rounded-full font-bold text-[#EBCB7E] hover:bg-white/10 transition-colors duration-150">
@@ -1217,17 +1263,28 @@ export default function Home() {
               </div>
             )}
 
+            {voiceAudio ? (
+              <VoiceBar audio={voiceAudio} t={t} onTurn={sendMessage} stopTurn={stopGeneration} onEnd={endVoice} />
+            ) : (
             <div className="relative flex items-end bg-y-surface rounded-[28px] border border-y-line-strong focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
               <textarea ref={inputRef}
                 aria-label={t.placeholder}
                 dir="auto"
                 disabled={exhausted}
-                className="y-composer-input disabled:cursor-not-allowed block w-full bg-transparent text-y-ink pl-5 md:pl-6 pr-16 py-[18px] max-h-[240px] resize-none placeholder:text-y-subtle text-[16px] md:text-[17px] leading-[1.5]"
+                className={`y-composer-input disabled:cursor-not-allowed block w-full bg-transparent text-y-ink pl-5 md:pl-6 ${canUseVoice ? 'pr-[108px]' : 'pr-16'} py-[18px] max-h-[240px] resize-none placeholder:text-y-subtle text-[16px] md:text-[17px] leading-[1.5]`}
                 placeholder={exhausted ? t.limitPlaceholder : t.placeholder}
                 rows={1} value={input} onChange={handleInput} onKeyDown={handleKeyDown}
               />
+              {canUseVoice && (
+                <button type="button" onClick={startVoice} disabled={loading || exhausted}
+                  title={signedIn ? t.voiceStart : t.voiceLocked} aria-label={signedIn ? t.voiceStart : t.voiceLocked}
+                  className="y-hit absolute right-[60px] bottom-2 size-11 flex items-center justify-center rounded-full text-y-muted hover:text-y-ink hover:bg-y-surface2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-150">
+                  <Mic size={20} />
+                  {!signedIn && <Lock size={11} strokeWidth={2.5} aria-hidden="true" className="absolute right-1.5 bottom-1.5" />}
+                </button>
+              )}
               <button
-                onClick={loading ? stopGeneration : () => sendMessage(input)}
+                onClick={loading ? stopGeneration : () => void sendMessage(input)}
                 disabled={!loading && (!input.trim() || exhausted)}
                 title={loading ? t.stop : t.send}
                 aria-label={loading ? t.stop : t.send}
@@ -1238,10 +1295,15 @@ export default function Home() {
                 {loading ? <Square size={14} fill="currentColor" /> : <ArrowUp size={20} strokeWidth={2.5} />}
               </button>
             </div>
+            )}
 
             <p className="mx-auto mt-2 w-fit max-w-full px-3 py-0.5 rounded-2xl bg-y-canvas text-center text-xs leading-snug text-y-muted">
-              <span className="hidden sm:inline"><kbd className="font-sans font-bold">Enter</kbd> {t.hintSend} · <kbd className="font-sans font-bold">Shift + Enter</kbd> {t.hintLine} · </span>
-              {t.disclosure}
+              {voiceAudio ? t.voiceDisclosure : (
+                <>
+                  <span className="hidden sm:inline"><kbd className="font-sans font-bold">Enter</kbd> {t.hintSend} · <kbd className="font-sans font-bold">Shift + Enter</kbd> {t.hintLine} · </span>
+                  {t.disclosure}
+                </>
+              )}
             </p>
           </div>
         </div>

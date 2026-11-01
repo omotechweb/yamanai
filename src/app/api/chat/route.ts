@@ -13,6 +13,10 @@ RULES:
 3. Open and close code blocks fully with backticks, and name the language.
 4. In Python, import BeautifulSoup with 'from bs4 import BeautifulSoup'.`;
 
+const VOICE_PROMPT = `The user is talking to you by voice and your reply will be read aloud.
+Reply in the language the user speaks, in natural spoken sentences. Keep replies brief unless the user asks for more detail or a specific length, and then give it in full.
+Never use markdown, lists, headings or emoji. Only when the user asks for actual code, say briefly that code is easier to read in the typed chat and describe the approach aloud.`;
+
 const ALLOWED_MODELS = new Set(['gpt-4o', 'gpt-4o-mini']);
 const ALLOWED_ROLES  = new Set(['user', 'assistant']);
 
@@ -106,9 +110,12 @@ export async function POST(req: NextRequest) {
 
   // Build system prompt
   const custom = signedIn && typeof body.customSystemPrompt === 'string' ? body.customSystemPrompt.slice(0, MAX_SYSTEM_CHARS) : '';
-  const systemContent = custom
-    ? `${DEFAULT_SYSTEM_PROMPT}\n\nADDITIONAL INSTRUCTIONS FROM THE USER:\n${custom}`
-    : DEFAULT_SYSTEM_PROMPT;
+  const voice = signedIn && body.voice === true;
+  const systemContent = [
+    DEFAULT_SYSTEM_PROMPT,
+    custom && `ADDITIONAL INSTRUCTIONS FROM THE USER:\n${custom}`,
+    voice && VOICE_PROMPT,
+  ].filter(Boolean).join('\n\n');
 
   const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -120,7 +127,7 @@ export async function POST(req: NextRequest) {
       model,
       messages: [{ role: 'system', content: systemContent }, ...messages],
       stream: true,
-      max_tokens: 4000,
+      max_tokens: voice ? 1000 : 4000,
       temperature: 0,
     }),
     signal: req.signal,
