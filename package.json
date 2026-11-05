@@ -10,6 +10,7 @@
     "lint": "eslint",
     "electron:start": "electron .",
     "electron:dev": "concurrently \"next dev\" \"wait-on http://localhost:3000 && electron . --url=http://localhost:3000\"",
+    "sync:hakkinda": "node scripts/sync-hakkinda.mjs",
     "electron:icon": "node scripts/make-icon.mjs",
     "electron:build": "electron-builder --win"
   },

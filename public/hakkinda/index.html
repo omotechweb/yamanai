@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>omotech</title>
+<meta name="description" content="omotech: oyunlar, yapay zekâ asistanları ve Windows araçları üreten açık kaynak stüdyo." data-ia="content|meta.desc">
+<meta name="theme-color" content="#06080F">
+<meta property="og:title" content="omotech">
+<meta property="og:description" content="Gece yazılan kod, herkese açık. Oyunlar, yapay zekâ ve Windows araçları.">
+<meta property="og:image" content="assets/img/tlw-title.jpg">
+<link rel="alternate" hreflang="tr" href="?lang=tr">
+<link rel="alternate" hreflang="en" href="?lang=en">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2306080F'/%3E%3Ctext x='5' y='22' font-family='monospace' font-size='16' fill='%23F2A541'%3E%7B%7D%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,500;12..96,700;12..96,800&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/hakkinda/styles.css">
+<link rel="canonical" href="https://yamanai.net/hakkinda">
+</head>
+<body>
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<nav class="nav" aria-label="Ana menü" data-ia="aria-label|nav.label">
+  <div class="wrap">
+    <a class="logo" href="#top" aria-label="omotech ana sayfa" data-ia="aria-label|nav.home"><span class="br">{</span>omotech<span class="br">}</span><span class="cur" aria-hidden="true"></span></a>
+    <div class="nav-links">
+      <a href="#featured" data-i="nav.featured">Öne çıkanlar</a>
+      <a href="#projects" data-i="nav.projects">Tüm projeler</a>
+      <a href="#langs" data-i="nav.langs">Kod haritası</a>
+      <a href="#contribute" data-i="nav.contribute">Katkıda bulun</a>
+    </div>
+    <div class="nav-right">
+      <div class="lang-switch" role="group" aria-label="Dil seçimi" data-ia="aria-label|nav.lang">
+        <button type="button" data-lang="tr" aria-pressed="true" lang="tr" title="Türkçe">TR</button>
+        <button type="button" data-lang="en" aria-pressed="false" lang="en" title="English">EN</button>
+      </div>
+      <a class="btn btn-sm" href="https://github.com/omotechweb" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <span class="gh-label">GitHub</span>
+      </a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <canvas id="sky" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow fade" data-i="hero.eyebrow">Açık kaynak stüdyo</span>
+        <h1 aria-label="Gece yazılan kod, herkese açık." data-ia="aria-label|hero.h1label" data-i="hero.h1"><span aria-hidden="true"><span class="w" style="--i:0">Gece</span> <span class="w thin" style="--i:1">yazılan</span> <span class="w" style="--i:2">kod,</span><br><span class="w thin" style="--i:3">herkese</span> <span class="w glow" style="--i:4">açık.</span></span></h1>
+        <p class="lede fade" style="--d:650ms" data-i="hero.lede">omotech; karlı demiryollarında geçen bir tren oyunu, sisli bir adada geçen bir deniz feneri gizemi, yapay zekâ asistanları ve Windows araçları üretiyor. Her satır GitHub'da, hepsi indirilebilir.</p>
+        <div class="hero-cta fade" style="--d:800ms">
+          <a class="btn btn-ember" href="#featured"><span data-i="hero.cta">Projeleri keşfet</span> <span class="arr">→</span></a>
+          <a class="btn" href="https://github.com/omotechweb" target="_blank" rel="noopener">github.com/omotechweb</a>
+        </div>
+      </div>
+
+      <div class="term fade" style="--d:500ms" id="tilt">
+        <div class="term-bar"><i></i><i></i><i></i><span>omotech — bash</span></div>
+        <div class="term-body" id="term" aria-label="Örnek terminal: repo klonlama" data-ia="aria-label|hero.term" role="img"><span class="pr">$</span> <span class="cmd">git clone https://github.com/omotechweb/TheLastWatch</span>
+Cloning into 'TheLastWatch'...
+<span class="ok">✓ done.</span></div>
+      </div>
+    </div>
+
+    <div class="stats fade" style="--d:1000ms" aria-label="GitHub istatistikleri" data-ia="aria-label|stats.label">
+      <div><b id="st-repos">6</b><span data-i="stats.repos">açık repo</span></div>
+      <div><b id="st-code">4,5 MB</b><span data-i="stats.code">kaynak kod</span></div>
+      <div><b>4</b><span data-i="stats.langs">ana dil: C#, Python, C++, TS</span></div>
+      <div><b id="st-last">4 Kas</b><span data-i="stats.last">son commit</span></div>
+    </div>
+  </div>
+</header>
+
+<!-- ================= ÖNE ÇIKANLAR ================= -->
+<section class="section" id="featured">
+  <div class="wrap">
+    <div class="head reveal">
+      <div>
+        <span class="eyebrow" data-i="nav.featured">Öne çıkanlar</span>
+        <h2 data-i="feat.h2">İki oyun, iki gece.</h2>
+      </div>
+      <p class="lede" style="max-width:40ch" data-i="feat.lede">Biri 1974'te Kuzey Atlantik'te bir fener adasında, diğeri Büyük Donma'dan yirmi yıl sonra tek bir demiryolu hattında geçiyor.</p>
+    </div>
+
+    <!-- The Last Watch -->
+    <article class="scene" id="tlw">
+      <div class="scene-media reveal">
+        <figure class="gallery" id="gallery" style="margin:0">
+          <img class="on" src="/hakkinda/assets/img/tlw-title.jpg" alt="The Last Watch başlık ekranı: gece denizinde kırmızı beyaz deniz feneri" data-ia="alt|tlw.alt1" data-cap="tlw.cap1">
+          <img src="/hakkinda/assets/img/tlw-radio.jpg" alt="Bekçi kulübesinde radyo ayarlanıyor" data-ia="alt|tlw.alt2" data-cap="tlw.cap2" loading="lazy">
+          <img src="/hakkinda/assets/img/tlw-journal.jpg" alt="Elias Marr'ın günlüğü okunuyor" data-ia="alt|tlw.alt3" data-cap="tlw.cap3" loading="lazy">
+          <img src="/hakkinda/assets/img/tlw-coast.jpg" alt="Gece Skerrow Rock kayalıkları" data-ia="alt|tlw.alt4" data-cap="tlw.cap4" loading="lazy">
+          <img src="/hakkinda/assets/img/tlw-rain.jpg" alt="Yağmurda fenere çıkan patika" data-ia="alt|tlw.alt5" data-cap="tlw.cap5" loading="lazy">
+          <img src="/hakkinda/assets/img/tlw-watcher.jpg" alt="Patikanın tepesinde bir figür" data-ia="alt|tlw.alt6" data-cap="tlw.cap6" loading="lazy">
+          <figcaption id="gcap"><b>Skerrow Rock.</b> Ekim 1974.</figcaption>
+        </figure>
+        <div class="thumbs" id="thumbs" aria-label="Ekran görüntüleri" data-ia="aria-label|tlw.thumbs"></div>
+      </div>
+      <div class="scene-copy reveal">
+        <span class="tag">Unreal Engine 5.7 · C++ · Windows</span>
+        <h3>The Last Watch</h3>
+        <blockquote data-i="tlw.quote">"3'teki kontrolü asla kaçırma."</blockquote>
+        <p class="lede" data-i="tlw.lede">Skerrow Rock'un yeni bekçisisin. Erzak teknesi bir ay dönmeyecek, senden önceki bekçi Elias Marr kayıp. Her gece saatin mekanizmasını kuruyor, ışığı döndürüyor ve karadaki Margaret'a rapor veriyorsun. Ada da her gece biraz daha sır veriyor.</p>
+        <ul class="facts">
+          <li><b data-i="f.story">Hikâye</b><span data-i="tlw.f1">5 gece, 2 son</span></li>
+          <li><b data-i="f.play">Oynanış</b><span data-i="tlw.f2">Savaş yok. Gerilim ışıktan, sesten ve sisten geliyor.</span></li>
+          <li><b data-i="f.light">Fener</b><span data-i="tlw.f3">94 basamaklı kule, ayarlanabilen radyo, sise vuran gerçek huzme</span></li>
+          <li><b data-i="f.lang">Dil</b><span data-i="tlw.f4">İngilizce · Türkçe</span></li>
+        </ul>
+        <div class="actions">
+          <a class="btn btn-ember" href="https://github.com/omotechweb/TheLastWatch/releases/download/v0.1.0/TheLastWatch-Setup-0.1.0.exe"><span data-i="dl.windows">Windows için indir</span> <small>v0.1.0 · 1,2 GB</small></a>
+          <a class="btn" href="https://github.com/omotechweb/TheLastWatch" target="_blank" rel="noopener" data-i="dl.source">Kaynak kod</a>
+        </div>
+      </div>
+    </article>
+
+    <!-- The Last Delivery -->
+    <article class="scene flip" id="tld">
+      <div class="scene-media reveal">
+        <div class="poster">
+          <canvas class="snow" id="snow" aria-hidden="true"></canvas>
+          <img src="/hakkinda/assets/img/tld-logo.png" alt="The Last Delivery logosu: ay ışığında karlı dağlarda ilerleyen buharlı tren" data-ia="alt|tld.alt" loading="lazy">
+        </div>
+      </div>
+      <div class="scene-copy reveal">
+        <span class="tag">MonoGame · C# · .NET 8</span>
+        <h3>The Last Delivery</h3>
+        <blockquote data-i="tld.quote">Açmayacak, soru sormayacak, durmayacak.</blockquote>
+        <p class="lede" data-i="tld.lede">Büyük Donma'nın üzerinden yirmi yıl geçmiş ve ısı paradan değerli. Kurye Arthur Hale'e mühürlü, garip bir şekilde sıcak bir paket veriliyor. Paketi iki bin kilometre ötedeki Sığınak-0'a götürmesi gerekiyor.</p>
+        <ul class="facts">
+          <li><b data-i="f.story">Hikâye</b><span data-i="tld.f1">2 kısım, toplam 80 bölüm. İlk kısımdaki kararların ikinciye (Project AURA) taşınıyor.</span></li>
+          <li><b data-i="f.people">İnsanlar</b><span data-i="tld.f2">Herkes sana ne yaptığını hatırlıyor. Güvenini kaybeden yolcu gece trenden kaçabilir.</span></li>
+          <li><b data-i="f.gfx">Grafik</b><span data-i="tld.f3">Hiç harici görsel dosyası yok, her şey kodla çiziliyor.</span></li>
+          <li><b data-i="f.lang">Dil</b><span data-i="tld.f4">Türkçe · İngilizce, ek olarak 4 arayüz dili</span></li>
+        </ul>
+        <div class="keys" aria-label="Kontroller" data-ia="aria-label|tld.keys">
+          <span><kbd>W</kbd><kbd>S</kbd> <span data-i="tld.k1">hızlan / yavaşla</span></span>
+          <span><kbd>A</kbd><kbd>D</kbd> <span data-i="tld.k2">makas</span></span>
+          <span><kbd>C</kbd> <span data-i="tld.k3">sobayı yak</span></span>
+          <span><kbd>T</kbd> <span data-i="tld.k4">telsiz</span></span>
+          <span><kbd>L</kbd> <span data-i="tld.k5">arşiv</span></span>
+        </div>
+        <div class="actions">
+          <a class="btn btn-ember" id="tld-setup" href="https://github.com/omotechweb/TheLastDelivery/releases/download/v2.7.0/TheLastDelivery-Setup-2.7.0.exe"><span data-i="dl.windows">Windows için indir</span> <small id="tld-setup-meta">v2.7.0 · 25 MB</small></a>
+          <a class="btn" href="https://github.com/omotechweb/TheLastDelivery/archive/refs/heads/main.zip"><span data-i="dl.source">Kaynak kod</span> <small>.zip</small></a>
+          <a class="btn" href="https://github.com/omotechweb/TheLastDelivery" target="_blank" rel="noopener">GitHub</a>
+        </div>
+        <div class="code"><code>git clone https://github.com/omotechweb/TheLastDelivery && cd TheLastDelivery && dotnet run</code><button class="copy" type="button" data-i="copy">Kopyala</button></div>
+      </div>
+    </article>
+
+    <!-- YamanAI -->
+    <article class="scene" id="yamanai" style="margin-top:clamp(110px,14vw,180px)">
+      <div class="scene-media reveal">
+        <div class="duo">
+          <div class="chat">
+            <div class="chat-label"><span>yamanai.net</span><span>Web</span></div>
+            <div class="bubble me" data-i="ya.b1">Bu fonksiyonu Python'a çevirir misin?</div>
+            <div class="bubble ai" data-i="ya.b2">Tabii. İşte aynı mantık Python'da, tip ipuçlarıyla birlikte:</div>
+          </div>
+          <div class="chat">
+            <div class="chat-label"><span data-i="ya.desk">YamanAI Masaüstü</span><span>PyQt6</span></div>
+            <div class="bubble me">open spotify</div>
+            <div class="bubble ai" data-i="ya.b3">Spotify açılıyor ✓</div>
+            <div class="bubble me" data-i="ya.b4">🎙 Yarın hava nasıl olacak?</div>
+          </div>
+        </div>
+      </div>
+      <div class="scene-copy reveal">
+        <span class="tag">Next.js · TypeScript · Python · Electron</span>
+        <h3>YamanAI</h3>
+        <p class="lede" data-i="ya.lede">Ücretsiz bir yapay zekâ sohbet asistanı. Hesap açmadan kullanabilirsin; kod yazar, çeviri yapar, açıklar. Sohbetlerin tarayıcında kalır. Windows'ta masaüstü uygulaması olarak da çalışır.</p>
+        <ul class="facts">
+          <li><b>Web</b><span data-i="ya.f1">Akışlı sohbet, kod blokları için canlı önizleme, sesli sohbet</span></li>
+          <li><b data-i="ya.fdesk">Masaüstü</b><span data-i="ya.f2">Uygulamaları sesle ya da düz cümleyle aç, yanıtları sesli dinle</span></li>
+          <li><b data-i="f.lang">Dil</b><span data-i="ya.f3">Türkçe · İngilizce</span></li>
+        </ul>
+        <div class="actions">
+          <a class="btn btn-ember" href="https://yamanai.net/" target="_blank" rel="noopener"><span data-i="ya.open">yamanai.net'i aç</span> <span class="arr">→</span></a>
+          <a class="btn" href="https://github.com/omotechweb/yamanai/raw/main/public/download/YamanAISetup.exe"><span data-i="ya.setup">Windows kurulumu</span> <small>92 MB</small></a>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+<!-- ================= TÜM PROJELER ================= -->
+<section class="section" id="projects" style="padding-top:0">
+  <div class="wrap">
+    <div class="head reveal">
+      <div>
+        <span class="eyebrow" data-i="nav.projects">Tüm projeler</span>
+        <h2 data-i="proj.h2">Altı repo, hepsi açık.</h2>
+      </div>
+      <div class="filters" role="group" aria-label="Kategoriye göre filtrele" data-ia="aria-label|proj.filter">
+        <button class="chip" type="button" data-f="all" aria-pressed="true" data-i="cat.all">Tümü</button>
+        <button class="chip" type="button" data-f="oyun" aria-pressed="false" data-i="cat.oyun">Oyun</button>
+        <button class="chip" type="button" data-f="ai" aria-pressed="false" data-i="cat.ai">Yapay zekâ</button>
+        <button class="chip" type="button" data-f="arac" aria-pressed="false" data-i="cat.arac">Araç</button>
+        <button class="chip" type="button" data-f="dil" aria-pressed="false" data-i="cat.dil">Dil</button>
+      </div>
+    </div>
+    <div class="grid" id="grid"><!-- main.js doldurur --></div>
+    <noscript><p class="lede">Projelerin listesi için <a href="https://github.com/omotechweb">github.com/omotechweb</a> adresine göz atın.</p></noscript>
+  </div>
+</section>
+
+<!-- ================= KOD HARİTASI ================= -->
+<section class="section langs" id="langs">
+  <div class="wrap">
+    <div class="head reveal" style="margin-bottom:32px">
+      <div>
+        <span class="eyebrow" data-i="nav.langs">Kod haritası</span>
+        <h2 data-i="map.h2">4,5 MB kodun<br>nereden geldiği.</h2>
+      </div>
+      <p class="lede" style="max-width:40ch" data-i="map.lede">GitHub'ın dil istatistiklerinden, altı reponun toplamı. Çoğu The Last Delivery'nin kodla çizilen dünyasından geliyor.</p>
+    </div>
+    <div class="bar" id="bar" role="img" aria-label="Dil dağılımı: C# yüzde 72, Python yüzde 14,7, C++ yüzde 8,3, TypeScript yüzde 3,9, diğer yüzde 1,1" data-ia="aria-label|map.bar">
+      <i style="--w:72.1%;background:var(--lang-cs)"></i>
+      <i style="--w:14.7%;background:var(--lang-py)"></i>
+      <i style="--w:8.3%;background:var(--lang-cpp)"></i>
+      <i style="--w:3.9%;background:var(--lang-ts)"></i>
+      <i style="--w:1%;background:var(--lang-other)"></i>
+    </div>
+    <div class="legend">
+      <div style="--c:var(--lang-cs)"><b data-i="map.p1">%72,1</b><span>C# · The Last Delivery</span></div>
+      <div style="--c:var(--lang-py)"><b data-i="map.p2">%14,7</b><span data-i="map.l2">Python · YamanAI, araçlar</span></div>
+      <div style="--c:var(--lang-cpp)"><b data-i="map.p3">%8,3</b><span>C++ · The Last Watch, WinTool</span></div>
+      <div style="--c:var(--lang-ts)"><b data-i="map.p4">%3,9</b><span>TypeScript · yamanai.net</span></div>
+      <div style="--c:var(--lang-other)"><b data-i="map.p5">%1,1</b><span>JS, CSS, PowerShell, Inno Setup</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= KATKI ================= -->
+<section class="section" id="contribute">
+  <div class="wrap">
+    <div class="head reveal">
+      <div>
+        <span class="eyebrow" data-i="nav.contribute">Katkıda bulun</span>
+        <h2 data-i="con.h2">Bir sonraki commit<br>senin olabilir.</h2>
+      </div>
+      <p class="lede" style="max-width:40ch" data-i="con.lede">Çeviriler en çok ihtiyaç duyulan şey. The Last Delivery'nin yeni bölümleri İspanyolca, Çince, Hintçe ve Arapça'da hâlâ İngilizce görünüyor.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <h3 data-i="con.s1">Fork'la</h3>
+        <p data-i="con.s1p">GitHub'da istediğin repoyu aç ve sağ üstteki Fork düğmesine bas.</p>
+        <div class="code"><code>github.com/omotechweb</code><button class="copy" type="button" data-i="copy">Kopyala</button></div>
+      </div>
+      <div class="step reveal">
+        <h3 data-i="con.s2">Klonla ve dal aç</h3>
+        <p data-i="con.s2p">Kendi kopyanı bilgisayarına indir, değişikliğin için yeni bir dal oluştur.</p>
+        <div class="code"><code>git clone https://github.com/KULLANICI/TheLastDelivery && git checkout -b ceviri-es</code><button class="copy" type="button" data-i="copy">Kopyala</button></div>
+      </div>
+      <div class="step reveal">
+        <h3 data-i="con.s3">Pull request gönder</h3>
+        <p data-i="con.s3p">Değişikliği push'la ve GitHub'da ne yaptığını iki cümleyle anlatan bir PR aç.</p>
+        <div class="code"><code>git push origin ceviri-es</code><button class="copy" type="button" data-i="copy">Kopyala</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="wrap">
+    <h2 class="reveal" data-i="fin.h2">Işıklar yanık.<br>Kod açık.</h2>
+    <p class="lede reveal" data-i="fin.lede">Yeni projeler önce GitHub'a düşüyor. Takip et, yıldız bırak, bir hata bulursan issue aç.</p>
+    <div class="actions reveal">
+      <a class="btn btn-ember" href="https://github.com/omotechweb" target="_blank" rel="noopener"><span data-i="fin.cta">GitHub'da takip et</span> <span class="arr">→</span></a>
+      <a class="btn" href="https://yamanai.net/" target="_blank" rel="noopener">yamanai.net</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span data-i="foot.copy">© 2026 omotech · Tüm projeler açık kaynak.</span>
+    <span><a href="https://github.com/omotechweb" target="_blank" rel="noopener">GitHub</a> · <a href="https://yamanai.net/" target="_blank" rel="noopener">YamanAI</a> · <a href="#top" data-i="foot.top">Başa dön ↑</a></span>
+  </div>
+</footer>
+
+<script src="/hakkinda/main.js"></script>
+</body>
+</html>

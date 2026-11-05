@@ -5,7 +5,7 @@ import {
 } from 'react';
 import {
   Plus, Menu, X, MonitorDown, Copy, Check, Trash2, Play, Search,
-  Settings, HelpCircle, Sun, Moon, Download, Type, LogIn, LogOut,
+  Settings, HelpCircle, Info, Sun, Moon, Download, Type, LogIn, LogOut,
   ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic,
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
@@ -1188,6 +1188,7 @@ export default function Home() {
             <span className="font-bold text-[15px] truncate">{activeConv?.title ?? 'YamanAI'}</span>
           </div>
           <div className="flex items-center flex-shrink-0">
+            <a href="/hakkinda" aria-label={t.about} className={ICON_BTN}><Info size={18} /></a>
             <Link href="/sss" aria-label={t.faq} className={ICON_BTN}><HelpCircle size={18} /></Link>
             <button onClick={() => setShowSettings(true)} aria-label={t.settings} className={ICON_BTN}><Settings size={18} /></button>
             <button onClick={startNewChat} aria-label={t.newChat} className={ICON_BTN}><Plus size={18} /></button>
@@ -1203,6 +1204,11 @@ export default function Home() {
               {settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               <span className={TOOLTIP_CLS} aria-hidden="true">{settings.theme === 'dark' ? t.lightTheme : t.darkTheme}</span>
             </button>
+            {/* Duz HTML sayfasi oldugu icin Link degil, normal baglanti */}
+            <a href="/hakkinda" aria-label={t.about} className={ICON_BTN}>
+              <Info size={18} />
+              <span className={TOOLTIP_CLS} aria-hidden="true">{t.about}</span>
+            </a>
             <Link href="/sss" aria-label={t.faq} className={ICON_BTN}>
               <HelpCircle size={18} />
               <span className={TOOLTIP_CLS} aria-hidden="true">{t.faq}</span>
