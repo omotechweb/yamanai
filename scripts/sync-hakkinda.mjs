@@ -16,6 +16,9 @@ await cp(join(SRC, 'assets', 'img'), join(OUT, 'assets', 'img'), { recursive: tr
 let html = await readFile(join(SRC, 'index.html'), 'utf8');
 // Sayfa /hakkinda adresinde (sonda / olmadan) acildigi icin goreli yollar mutlak yapilir
 html = html.replace(/(src|href)="(styles\.css|main\.js|assets\/[^"]+)"/g, `$1="${BASE}$2"`);
+// omotech sayfasi dili ?lang= ile istemcide degistirir; burada tek bir statik dosya ve tek canonical var.
+// Goreli ve kendi canonical'i olmayan hreflang baglantilari Google'da yok sayilir ya da cakisir, kaldirilir.
+html = html.replace(/[ \t]*<link rel="alternate" hreflang="[^"]*" href="\?lang=[^"]*">\r?\n?/g, '');
 if (!html.includes('rel="canonical"')) {
   html = html.replace('</head>', '<link rel="canonical" href="https://yamanai.net/hakkinda">\n</head>');
 }
