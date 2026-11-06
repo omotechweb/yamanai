@@ -113,6 +113,8 @@ export async function POST(req: NextRequest) {
   const voice = signedIn && body.voice === true;
   const systemContent = [
     DEFAULT_SYSTEM_PROMPT,
+    // Model bugunun tarihini bilmez; "bugun gunlerden ne", "kac yasinda" gibi sorular icin gerekli
+    `Today is ${new Date().toISOString().slice(0, 10)} (UTC). Your training data may be older than this, so say so when a question depends on recent events.`,
     custom && `ADDITIONAL INSTRUCTIONS FROM THE USER:\n${custom}`,
     voice && VOICE_PROMPT,
   ].filter(Boolean).join('\n\n');
@@ -128,7 +130,8 @@ export async function POST(req: NextRequest) {
       messages: [{ role: 'system', content: systemContent }, ...messages],
       stream: true,
       max_tokens: voice ? 1000 : 4000,
-      temperature: 0,
+      // 0 olunca "Yeniden yanitla" hep ayni yaniti verir ve fikir istekleri tekrar eder
+      temperature: 0.7,
     }),
     signal: req.signal,
   }).catch(() => null);
@@ -163,6 +166,10 @@ export async function POST(req: NextRequest) {
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`)
             );
+          }
+          // Yanit uzunluk sinirinda kesildiyse istemci "Devam et" sunabilsin
+          if (json.choices?.[0]?.finish_reason === 'length') {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ finish: 'length' })}\n\n`));
           }
         } catch {
           // Incomplete JSON - buffer logic prevents this in normal flow

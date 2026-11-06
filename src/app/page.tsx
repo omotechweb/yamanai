@@ -1,15 +1,13 @@
 "use client";
 
 import {
-  useState, useRef, useEffect, useCallback, useMemo, memo, createContext, useContext,
+  useState, useRef, useEffect, useCallback, useMemo, memo, createContext, useContext, useSyncExternalStore, lazy, Suspense,
 } from 'react';
 import {
   Plus, Menu, X, MonitorDown, Copy, Check, Trash2, Play, Search,
   Settings, HelpCircle, Info, Sun, Moon, Download, Type, LogIn, LogOut,
-  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic,
+  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic, Pencil, Upload, FileDown, WrapText, Pin, PinOff, WifiOff, Monitor,
 } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSession, signIn, signOut } from 'next-auth/react';
@@ -17,6 +15,10 @@ import EbruPlate from '@/components/EbruPlate';
 import { LogoMark, ChatMark } from '@/components/Mark';
 import { VoiceBar } from '@/components/VoiceBar';
 import { useIsDesktopApp } from '@/lib/desktop';
+import {
+  type Message, type Conversation, type ConvMeta, LS_KEY, MAX_INPUT_CHARS, CODE_EXT, CODE_THEME, toApiHistory,
+  uid, loadConversations, parseImport, groupByDate, reactPreviewDoc,
+} from '@/lib/chat';
 import { unlockAudio, voiceSupported, type TurnResult, type VoiceError } from '@/lib/voiceSession';
 import {
   STRINGS, LS_SETTINGS, useLang, notifySettingsChanged,
@@ -32,13 +34,6 @@ const SyntaxHighlighter = dynamic(
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface Message {
-  id: string;
-  role: 'user' | 'ai';
-  text: string;
-  status?: 'stopped' | 'network' | 'rate_limited' | 'not_configured' | 'daily_limit' | 'generic';
-}
-
 interface Usage {
   used: number;
   limit: number;
@@ -50,15 +45,8 @@ interface Usage {
 // Giris gerektiren ozellikler: sunucu da ayrica uygular, bu yalnizca arayuz icin
 const GateContext = createContext<{ signedIn: boolean; requireLogin: () => void }>({ signedIn: false, requireLogin: () => {} });
 
-export interface Conversation {
-  id: string;
-  title: string;
-  messages: Message[];
-  updatedAt: number;
-}
-
 export interface AppSettings {
-  theme: 'dark' | 'light';
+  theme: 'system' | 'dark' | 'light';
   fontSize: 'sm' | 'base' | 'lg';
   model: 'gpt-4o' | 'gpt-4o-mini';
   systemPrompt: string;
@@ -67,10 +55,10 @@ export interface AppSettings {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const LS_KEY        = 'yamanai_conversations';
 const LS_POPUP      = 'hasSeenDesktopPopup';
 const LS_MSG_COUNT  = 'yamanai_msg_count';
 const LS_LOGIN_SEEN = 'yamanai_login_popup_seen';
+const LS_DRAFT      = 'yamanai_draft';
 const LOGIN_POPUP_AFTER = 3; // kac mesaj sonra login popup ciksin
 const SEARCH_AFTER  = 6;     // kac sohbetten sonra arama kutusu gorunsun
 const UNDO_MS       = 6000;
@@ -81,7 +69,7 @@ const DEFAULT_GUEST_LIMIT = 10;
 const DEFAULT_USER_LIMIT  = 50;
 
 const DEFAULT_SETTINGS: AppSettings = {
-  theme: 'light',
+  theme: 'system',
   fontSize: 'base',
   model: 'gpt-4o',
   systemPrompt: '',
@@ -97,45 +85,13 @@ const SIDE_ICON_BTN = 'y-hit inline-flex items-center justify-center size-9 roun
 const MODAL_BACKDROP = 'y-backdrop fixed inset-0 z-[60] flex items-center justify-center bg-[#070C1E]/60 p-4';
 const MODAL_PANEL = 'y-panel relative w-full bg-y-raised text-y-ink shadow-[0_18px_50px_rgb(7_12_30_/_0.35)]';
 
-// Kod bloklari iki temada da lacivert zemin ustunde: tokenlar ebru murekkeplerinin acik tonlari
-const CODE_THEME: Record<string, React.CSSProperties> = {
-  'code[class*="language-"]': { color: '#E8E6F0' },
-  'pre[class*="language-"]': { color: '#E8E6F0' },
-  comment: { color: '#9AA6CF', fontStyle: 'italic' }, prolog: { color: '#9AA6CF' }, doctype: { color: '#9AA6CF' }, cdata: { color: '#9AA6CF' },
-  punctuation: { color: '#C4CBE4' },
-  keyword: { color: '#F2997F' }, atrule: { color: '#F2997F' }, tag: { color: '#F2997F' }, boolean: { color: '#F2997F' }, important: { color: '#F2997F' },
-  string: { color: '#EBCB7E' }, char: { color: '#EBCB7E' }, 'attr-value': { color: '#EBCB7E' }, regex: { color: '#EBCB7E' }, inserted: { color: '#EBCB7E' },
-  function: { color: '#86D6DB' }, 'class-name': { color: '#86D6DB' }, builtin: { color: '#86D6DB' }, selector: { color: '#86D6DB' },
-  number: { color: '#B7C4F5' }, constant: { color: '#B7C4F5' }, symbol: { color: '#B7C4F5' }, 'attr-name': { color: '#B7C4F5' }, property: { color: '#B7C4F5' }, variable: { color: '#E8E6F0' },
-  operator: { color: '#C4CBE4' }, deleted: { color: '#F2997F' },
-};
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const uid = () => Math.random().toString(36).slice(2, 9);
-
-function loadConversations(): Conversation[] {
-  try {
-    const parsed: Conversation[] = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]');
-    return parsed.filter(c => c.messages?.length > 0);
-  } catch { return []; }
-}
 function loadSettings(): AppSettings {
-  const system: AppSettings['theme'] = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   try {
     const raw = localStorage.getItem(LS_SETTINGS);
-    return raw ? { ...DEFAULT_SETTINGS, theme: system, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS, theme: system };
-  } catch { return { ...DEFAULT_SETTINGS, theme: system }; }
-}
-function groupByDate(convs: Conversation[]) {
-  const start = new Date(); start.setHours(0, 0, 0, 0);
-  const todayStart = start.getTime();
-  const yesterdayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1).getTime();
-  return {
-    today:     convs.filter(c => c.updatedAt >= todayStart),
-    yesterday: convs.filter(c => c.updatedAt >= yesterdayStart && c.updatedAt < todayStart),
-    older:     convs.filter(c => c.updatedAt < yesterdayStart),
-  };
+    return raw ? { ...DEFAULT_SETTINGS, ...JSON.parse(raw) } : { ...DEFAULT_SETTINGS };
+  } catch { return { ...DEFAULT_SETTINGS }; }
 }
 function toUsage(data: Omit<Usage, 'resetHours'> & { resetAt: number }): Usage {
   return {
@@ -143,27 +99,15 @@ function toUsage(data: Omit<Usage, 'resetHours'> & { resetAt: number }): Usage {
     resetHours: Math.max(1, Math.ceil((data.resetAt - Date.now()) / 3_600_000)),
   };
 }
-/** Builds a sandboxed page that compiles and mounts a React component in the browser. */
-function reactPreviewDoc(code: string) {
-  const name = /export\s+default\s+function\s+(\w+)/.exec(code)?.[1]
-    ?? /export\s+default\s+(\w+)\s*;?/.exec(code)?.[1]
-    ?? /(?:function|const)\s+([A-Z]\w*)/.exec(code)?.[1];
-  const source = code
-    .replace(/^\s*import\s[\s\S]*?['"][^'"]+['"];?\s*$/gm, '')
-    .replace(/export\s+default\s+function/, 'function')
-    .replace(/export\s+default\s+\w+\s*;?/, '')
-    .replace(/^\s*export\s+/gm, '')
-    .replace(/<\/script/gi, '<\\/script');
-  const mount = name ? `ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(${name}));` : '';
-  return `<!doctype html><html><body style="margin:0;font-family:sans-serif"><div id="root"></div>
-<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"><\/script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"><\/script>
-<script type="text/plain" id="src">const {useState,useEffect,useRef,useMemo,useCallback,useReducer,useContext,createContext}=React;
-${source}
-${mount}<\/script>
-<script>try{(0,eval)(Babel.transform(document.getElementById('src').textContent,{filename:'preview.tsx',presets:['typescript','react']}).code)}catch(e){document.body.innerHTML='<pre style="color:#A8281A;padding:1rem;white-space:pre-wrap"></pre>';document.querySelector('pre').textContent=String(e)}<\/script>
-</body></html>`;
+const DARK_QUERY = '(prefers-color-scheme: dark)';
+function subscribeScheme(cb: () => void) {
+  const mq = matchMedia(DARK_QUERY);
+  mq.addEventListener('change', cb);
+  return () => mq.removeEventListener('change', cb);
+}
+function subscribeOnline(cb: () => void) {
+  window.addEventListener('online', cb); window.addEventListener('offline', cb);
+  return () => { window.removeEventListener('online', cb); window.removeEventListener('offline', cb); };
 }
 function offersDesktopApp() {
   const ua = navigator.userAgent;
@@ -177,7 +121,9 @@ function useDialogFocus<T extends HTMLElement>() {
     const root = ref.current;
     if (!root) return;
     const previous = document.activeElement as HTMLElement | null;
-    const focusables = () => [...root.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),textarea,input,iframe')];
+    // Gizli (ornegin dosya secici) ya da tabIndex=-1 ogeler sayilmaz, yoksa Tab pencereden kacar
+    const focusables = () => [...root.querySelectorAll<HTMLElement>('a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),iframe')]
+      .filter(el => el.tabIndex >= 0 && el.getClientRects().length > 0);
     root.tabIndex = -1;
     root.focus();
     const onKey = (e: KeyboardEvent) => {
@@ -341,6 +287,14 @@ const CodeBlock = memo(({ language, children, t }: { language: string; children:
   const canPreview = PREVIEW_LANGS.has(language.toLowerCase());
   const code = String(children ?? '').replace(/\n$/, '');
   const headerBtn = 'h-7 px-2 rounded-md text-xs font-medium hover:bg-white/10';
+  const [wrap, setWrap] = useState(false);
+  const download = () => {
+    const ext = CODE_EXT[language.toLowerCase()] ?? (/^\w{1,8}$/.test(language) ? language.toLowerCase() : 'txt');
+    const url = URL.createObjectURL(new Blob([code], { type: 'text/plain;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `yamanai.${ext}`; a.click();
+    URL.revokeObjectURL(url);
+  };
   return (
     <>
       {preview && <LivePreviewModal code={code} lang={language.toLowerCase()} onClose={() => setPreview(false)} t={t} />}
@@ -355,12 +309,20 @@ const CodeBlock = memo(({ language, children, t }: { language: string; children:
                 {signedIn ? <Play size={13} /> : <Lock size={13} />}<span className="hidden sm:inline" aria-hidden="true">{t.preview}</span>
               </button>
             )}
+            <button type="button" onClick={() => setWrap(w => !w)} aria-pressed={wrap} aria-label={t.wrapLines} title={t.wrapLines}
+              className={`y-hit inline-flex items-center justify-center transition-colors duration-150 ${headerBtn} ${wrap ? 'text-white bg-white/10' : 'text-[#C4CBE4] hover:text-white'}`}>
+              <WrapText size={14} />
+            </button>
+            <button type="button" onClick={download} aria-label={t.downloadCode} title={t.downloadCode}
+              className={`y-hit inline-flex items-center justify-center text-[#C4CBE4] hover:text-white transition-colors duration-150 ${headerBtn}`}>
+              <Download size={14} />
+            </button>
             <CopyButton text={code} t={t} className={`text-[#C4CBE4] hover:text-white ${headerBtn}`} />
           </div>
         </div>
-        <SyntaxHighlighter style={CODE_THEME} language={language || 'text'} PreTag="div" wrapLongLines={false}
-          codeTagProps={{ style: { fontFamily: 'inherit' } }}
-          customStyle={{ margin: 0, padding: '1rem', fontSize: '13.5px', lineHeight: '1.65', borderRadius: 0, background: 'transparent', overflowX: 'auto', fontFamily: 'var(--font-code), ui-monospace, monospace' }}>
+        <SyntaxHighlighter style={CODE_THEME} language={language || 'text'} PreTag="div" wrapLongLines={wrap}
+          codeTagProps={{ style: { fontFamily: 'inherit', ...(wrap ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } : {}) } }}
+          customStyle={{ margin: 0, padding: '1rem', fontSize: '13.5px', lineHeight: '1.65', borderRadius: 0, background: 'transparent', overflowX: wrap ? 'hidden' : 'auto', fontFamily: 'var(--font-code), ui-monospace, monospace' }}>
           {code}
         </SyntaxHighlighter>
       </div>
@@ -371,9 +333,25 @@ CodeBlock.displayName = 'CodeBlock';
 
 // ─── MarkdownRenderer ─────────────────────────────────────────────────────────
 
+// Markdown kutuphanesi (~66 KB sikistirilmis) bos karsilama ekraninda gerekmez: yalnizca bir yanit
+// gosterilecekken yuklenir. Yazi kutusuna odaklaninca onceden indirilmeye baslar.
+let markdownModule: Promise<{ default: React.ComponentType<React.ComponentProps<typeof import('react-markdown').default>> }> | null = null;
+function loadMarkdown() {
+  markdownModule ??= Promise.all([import('react-markdown'), import('remark-gfm')]).then(([md, gfm]) => {
+    const Markdown = md.default;
+    const plugins = [gfm.default];
+    const WithGfm = (props: React.ComponentProps<typeof Markdown>) => <Markdown remarkPlugins={plugins} {...props} />;
+    return { default: WithGfm };
+  });
+  return markdownModule;
+}
+const ReactMarkdown = lazy(loadMarkdown);
+
 const MarkdownRenderer = memo(({ content, fontSize, t }: { content: string; fontSize: string; t: Strings }) => (
   <div dir="auto" className={`y-prose text-y-ink ${fontSize} leading-[1.65] break-words`}>
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+    {/* Kutuphane gelene kadar metin duz gorunur, bos kalmaz */}
+    <Suspense fallback={<p className="whitespace-pre-wrap">{content}</p>}>
+    <ReactMarkdown components={{
       code({ className, children, ...props }: React.ComponentProps<'code'>) {
         const match = /language-(\w+)/.exec(className || '');
         if (match) return <CodeBlock language={match[1]} t={t}>{children}</CodeBlock>;
@@ -398,6 +376,7 @@ const MarkdownRenderer = memo(({ content, fontSize, t }: { content: string; font
     }}>
       {content}
     </ReactMarkdown>
+    </Suspense>
   </div>
 ));
 MarkdownRenderer.displayName = 'MarkdownRenderer';
@@ -414,14 +393,73 @@ InkDrop.displayName = 'InkDrop';
 
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
-const MessageBubble = memo(({ msg, fontSize, fresh, t, onRetry, isLast, busy }: {
-  msg: Message; fontSize: string; fresh: boolean; t: Strings; onRetry: () => void; isLast: boolean; busy: boolean;
+const UserEditor = memo(({ initial, fontSize, t, onSubmit, onCancel }: {
+  initial: string; fontSize: string; t: Strings; onSubmit: (text: string) => void; onCancel: () => void;
 }) => {
+  const [value, setValue] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const grow = (el: HTMLTextAreaElement) => { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 320)}px`; };
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    grow(el); el.focus(); el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const submit = () => { if (value.trim() && value.length <= MAX_INPUT_CHARS) onSubmit(value); };
+  return (
+    <div className="w-full md:max-w-[85%] ml-auto rounded-2xl bg-y-surface border border-y-line-strong p-3 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
+      <textarea ref={ref} dir="auto" value={value} aria-label={t.editMsg}
+        onChange={e => { setValue(e.target.value); grow(e.target); }}
+        onKeyDown={e => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onCancel(); }
+          else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); }
+        }}
+        className={`y-composer-input block w-full bg-transparent text-y-ink resize-none leading-[1.55] px-1 ${fontSize}`} />
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs text-y-muted px-1">{t.editHint}</span>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <button type="button" onClick={onCancel} className="min-h-9 px-3.5 text-sm font-semibold text-y-muted hover:text-y-ink rounded-full hover:bg-y-surface2 transition-colors duration-150">{t.cancel}</button>
+          <button type="button" onClick={submit} disabled={!value.trim() || value.length > MAX_INPUT_CHARS} className="min-h-9 px-4 text-sm font-bold text-white bg-y-accent hover:bg-y-accent-hover disabled:opacity-50 rounded-full transition-colors duration-150">{t.editSave}</button>
+        </div>
+      </div>
+    </div>
+  );
+});
+UserEditor.displayName = 'UserEditor';
+
+/** Bugun yazildiysa yalnizca saat, daha eskiyse tarih ve saat */
+const MsgTime = ({ at, lang }: { at?: number; lang: string }) => {
+  if (!at) return null;
+  const d = new Date(at);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const label = new Intl.DateTimeFormat(lang, sameDay ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d);
+  const full = new Intl.DateTimeFormat(lang, { dateStyle: 'full', timeStyle: 'short' }).format(d);
+  return <time dateTime={d.toISOString()} title={full} className="px-1.5 text-xs text-y-subtle tabular-nums">{label}</time>;
+};
+
+const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, onContinue, isLast, busy }: {
+  msg: Message; fontSize: string; fresh: boolean; t: Strings; lang: string; onRetry: () => void;
+  onEdit: (id: string, text: string) => void; onContinue: () => void; isLast: boolean; busy: boolean;
+}) => {
+  const [editing, setEditing] = useState(false);
   if (msg.role === 'user') {
+    if (editing) {
+      return <UserEditor initial={msg.text} fontSize={fontSize} t={t} onCancel={() => setEditing(false)}
+        onSubmit={text => { setEditing(false); onEdit(msg.id, text); }} />;
+    }
     return (
-      <div className={`flex justify-end ${fresh ? 'y-msg-new' : ''}`}>
+      <div className={`group flex flex-col items-end ${fresh ? 'y-msg-new' : ''}`}>
         <div dir="auto" className={`max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-y-bubble text-y-bubble-ink whitespace-pre-wrap break-words leading-[1.55] ${fontSize}`}>
           {msg.text}
+        </div>
+        <div className="mt-1 flex items-center gap-1 transition-opacity duration-150 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100">
+          <MsgTime at={msg.at} lang={lang} />
+          <CopyButton text={msg.text} showLabel={false} t={t} className="size-8 rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2" />
+          {!busy && (
+            <button type="button" onClick={() => setEditing(true)} title={t.editMsg} aria-label={t.editMsg}
+              className="y-hit size-8 inline-flex items-center justify-center rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150">
+              <Pencil size={14} />
+            </button>
+          )}
         </div>
       </div>
     );
@@ -433,6 +471,17 @@ const MessageBubble = memo(({ msg, fontSize, fresh, t, onRetry, isLast, busy }: 
       {waiting ? <InkDrop label={t.typing} /> : msg.text ? <MarkdownRenderer content={msg.text} fontSize={fontSize} t={t} /> : null}
 
       {msg.status === 'stopped' && <p className="mt-2 text-sm text-y-subtle">{t.stopped}</p>}
+      {msg.truncated && !msg.status && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <span className="text-sm text-y-muted">{t.truncated}</span>
+          {isLast && !busy && (
+            <button type="button" onClick={onContinue}
+              className="min-h-9 px-4 rounded-full border border-y-line-strong text-[15px] font-semibold hover:bg-y-surface2 transition-colors duration-150">
+              {t.continueAnswer}
+            </button>
+          )}
+        </div>
+      )}
       {failed && (
         <div role="alert" className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-y-danger">
           <AlertCircle size={16} className="flex-shrink-0" />
@@ -455,6 +504,7 @@ const MessageBubble = memo(({ msg, fontSize, fresh, t, onRetry, isLast, busy }: 
               <RotateCcw size={14} />
             </button>
           )}
+          <MsgTime at={msg.at} lang={lang} />
         </div>
       )}
     </div>
@@ -499,10 +549,31 @@ WelcomeScreen.displayName = 'WelcomeScreen';
 
 // ─── SidebarGroup ────────────────────────────────────────────────────────────
 
-const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, t }: {
-  label: string; convs: Conversation[]; activeId: string;
-  onSelect: (id: string) => void; onDelete: (id: string) => void; t: Strings;
+const RenameField = ({ initial, label, onDone }: { initial: string; label: string; onDone: (title: string | null) => void }) => {
+  const [value, setValue] = useState(initial);
+  const done = useRef(false);
+  const finish = (v: string | null) => { if (done.current) return; done.current = true; onDone(v); };
+  return (
+    <li className="flex items-center h-10 w-full rounded-xl bg-y-side-active px-2">
+      <input autoFocus aria-label={label} value={value} maxLength={80} dir="auto"
+        onFocus={e => e.currentTarget.select()}
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => finish(value)}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); finish(value); }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); }
+        }}
+        className="w-full h-8 px-2 rounded-lg bg-y-side text-y-side-ink text-[15px] outline-2 outline-y-focus" />
+    </li>
+  );
+};
+
+const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, onRename, onPin, t }: {
+  label: string; convs: ConvMeta[]; activeId: string;
+  onSelect: (id: string) => void; onDelete: (id: string) => void; onRename: (id: string, title: string) => void;
+  onPin: (id: string) => void; t: Strings;
 }) => {
+  const [renaming, setRenaming] = useState<string | null>(null);
   if (!convs.length) return null;
   return (
     <div className="mb-2">
@@ -510,17 +581,35 @@ const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, t }: {
       <ul className="space-y-0.5">
         {convs.map(c => {
           const isActive = c.id === activeId;
+          if (renaming === c.id) {
+            return <RenameField key={c.id} initial={c.title} label={t.renameChat}
+              onDone={title => { setRenaming(null); if (title?.trim() && title.trim() !== c.title) onRename(c.id, title.trim()); }} />;
+          }
+          // Dugmeler satirin sagina biner, yer kaplamaz: fareyle uzerine gelince ya da klavyeyle odaklaninca,
+          // dokunmatik ekranda yalnizca secili sohbette gorunur. Boylece basliklar tam genislikte okunur.
+          const reveal = isActive
+            ? 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100'
+            : 'pointer-coarse:hidden opacity-0 group-hover:opacity-100 group-focus-within:opacity-100';
+          const btn = `size-8 flex items-center justify-center rounded-full text-y-side-muted hover:text-y-side-ink transition-colors duration-150 ${isActive ? 'hover:bg-y-side-hover' : 'hover:bg-y-side-active'}`;
           return (
             <li key={c.id} className={`group relative flex items-center h-10 w-full rounded-xl transition-colors duration-150 ${isActive ? 'bg-y-side-active' : 'hover:bg-y-side-hover'}`}>
               <button type="button" onClick={() => onSelect(c.id)} aria-current={isActive ? 'true' : undefined}
-                className={`flex-1 h-full flex items-center gap-2.5 pl-3 pr-1 text-[15px] text-left min-w-0 rounded-xl ${isActive ? 'text-y-side-ink font-bold' : 'text-y-side-ink/85'}`}>
+                className={`flex-1 h-full flex items-center gap-2.5 pl-3 pr-2 text-[15px] text-left min-w-0 rounded-xl ${isActive ? 'text-y-side-ink font-bold' : 'text-y-side-ink/85'}`}>
                 <ChatMark id={c.id} />
                 <span className="truncate">{c.title}</span>
               </button>
-              <button type="button" onClick={() => onDelete(c.id)} title={t.deleteChat} aria-label={`${t.deleteChat}: ${c.title}`}
-                className="size-8 mr-1 flex items-center justify-center rounded-full flex-shrink-0 text-y-side-muted hover:text-y-side-ink hover:bg-y-side-active transition-[color,background-color,opacity] duration-150 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:focus-visible:opacity-100 pointer-fine:group-focus-within:opacity-100">
-                <Trash2 size={14} />
-              </button>
+              <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center rounded-full transition-opacity duration-150 ${isActive ? 'bg-y-side-active' : 'bg-y-side-hover'} ${reveal}`}>
+                <button type="button" onClick={() => onPin(c.id)} aria-pressed={!!c.pinned}
+                  title={c.pinned ? t.unpinChat : t.pinChat} aria-label={`${c.pinned ? t.unpinChat : t.pinChat}: ${c.title}`} className={btn}>
+                  {c.pinned ? <PinOff size={14} /> : <Pin size={14} />}
+                </button>
+                <button type="button" onClick={() => setRenaming(c.id)} title={t.renameChat} aria-label={`${t.renameChat}: ${c.title}`} className={btn}>
+                  <Pencil size={14} />
+                </button>
+                <button type="button" onClick={() => onDelete(c.id)} title={t.deleteChat} aria-label={`${t.deleteChat}: ${c.title}`} className={btn}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
             </li>
           );
         })}
@@ -567,10 +656,11 @@ function Segmented<T extends string>({ label, options, value, onChange, onLocked
 
 // ─── Settings Modal ──────────────────────────────────────────────────────────
 
-const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, t, usage }: {
+const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, onImport, t, usage }: {
   settings: AppSettings; onSave: (s: AppSettings) => void;
-  onClose: () => void; onDeleteAll: () => void; onExport: () => void; t: Strings; usage: Usage | null;
+  onClose: () => void; onDeleteAll: () => void; onExport: () => void; onImport: (file: File) => void; t: Strings; usage: Usage | null;
 }) => {
+  const fileRef = useRef<HTMLInputElement>(null);
   const ref = useDialogFocus<HTMLDivElement>();
   const { signedIn, requireLogin } = useContext(GateContext);
   const [local, setLocal] = useState<AppSettings>({ ...settings });
@@ -586,10 +676,11 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
           <h2 id="settings-title" className="font-bold text-xl tracking-tight">{t.settings}</h2>
           <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} size-9`}><X size={20} /></button>
         </div>
-        <div className="px-5 sm:px-6 py-6 space-y-6 overflow-y-auto">
+        <div className="px-5 sm:px-6 py-6 space-y-6 overflow-y-auto overscroll-contain">
           <div>
             <span className={groupLabel}>{t.theme}</span>
             <Segmented label={t.theme} value={local.theme} onChange={v => patch('theme', v)} options={[
+              { value: 'system', label: t.system, icon: <Monitor size={16} /> },
               { value: 'light', label: t.light, icon: <Sun size={16} /> },
               { value: 'dark', label: t.dark, icon: <Moon size={16} /> },
             ]} />
@@ -623,7 +714,7 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
             {signedIn ? (
               <textarea id="system-prompt" dir="auto" rows={3} maxLength={4000} value={local.systemPrompt} onChange={e => patch('systemPrompt', e.target.value)}
                 placeholder={t.customPlaceholder}
-                className="w-full bg-y-surface border border-y-line-strong rounded-xl p-3 text-base text-y-ink placeholder:text-y-subtle focus:outline-none focus:border-y-ink resize-none transition-colors duration-150" />
+                className="w-full bg-y-surface border border-y-line-strong rounded-xl p-3 text-base text-y-ink placeholder:text-y-subtle focus:border-y-ink resize-none transition-colors duration-150" />
             ) : (
               <button type="button" onClick={requireLogin} className="w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full border border-y-line-strong text-y-ink hover:bg-y-surface2 text-[15px] font-semibold transition-colors duration-150">
                 <Lock size={15} /> {t.customLocked}
@@ -641,6 +732,11 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
             <button type="button" onClick={onExport} className="w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full border border-y-line-strong text-y-ink hover:bg-y-surface2 text-[15px] font-semibold transition-colors duration-150">
               <Download size={16} /> {t.export}
             </button>
+            <button type="button" onClick={() => fileRef.current?.click()} className="mt-2 w-full min-h-11 flex items-center justify-center gap-2 px-4 rounded-full border border-y-line-strong text-y-ink hover:bg-y-surface2 text-[15px] font-semibold transition-colors duration-150">
+              <Upload size={16} /> {t.importChats}
+            </button>
+            <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" tabIndex={-1} aria-hidden="true"
+              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) { onImport(f); onClose(); } }} />
             {/* Yikici eylem digerlerinden ayri durur: yanlislikla tiklanmasin */}
             <div className="mt-8">
               {!confirmDelete ? (
@@ -697,6 +793,11 @@ export default function Home() {
   // Sesli sohbet aciksa, tiklamayla acilmis ses ogesini tutar
   const [voiceAudio, setVoiceAudio]             = useState<HTMLAudioElement | null>(null);
   const [voiceNotice, setVoiceNotice]           = useState<VoiceError | null>(null);
+  const [notice, setNotice]                     = useState<string | null>(null);
+  const online = useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
+  const systemDark = useSyncExternalStore(subscribeScheme, () => matchMedia(DARK_QUERY).matches, () => false);
+  // "Sistem" secildiyse isletim sisteminin temasini anlik izler
+  const theme: 'dark' | 'light' = settings.theme === 'system' ? (systemDark ? 'dark' : 'light') : settings.theme;
   // Bu oturumda gonderilen mesajlar: yalnizca bunlar giris animasyonu alir
   const [freshIds, setFreshIds]                 = useState<Set<string>>(() => new Set());
 
@@ -718,21 +819,27 @@ export default function Home() {
   const userLimit    = usage?.userLimit ?? DEFAULT_USER_LIMIT;
   const remaining    = usage ? Math.max(usage.limit - usage.used, 0) : null;
   const exhausted    = remaining === 0;
+  const tooLong      = input.length > MAX_INPUT_CHARS;
   const requireLogin = useCallback(() => { setShowSettings(false); setShowLoginPopup(true); }, []);
   const gate         = useMemo(() => ({ signedIn, requireLogin }), [signedIn, requireLogin]);
   // Plaka biten her yanitla buyur; akan yanit, bitene kadar sayilmaz
   const settledAnswers = messages.filter(m => m.role === 'ai').length - (streamingHere ? 1 : 0);
 
+  // Kenar cubugu yalnizca baslik, tarih ve sabitleme bilgisini kullanir. Akan yanit her jetonda
+  // sohbet nesnesini yeniler; imza degismedikce liste ayni dizi kalir ve yeniden cizilmez.
+  const listSig = JSON.stringify(conversations.map(c => [c.id, c.title, c.updatedAt, c.pinned ? 1 : 0]));
+  const listMeta = useMemo<ConvMeta[]>(() => (JSON.parse(listSig) as [string, string, number, number][])
+    .map(([id, title, updatedAt, pin]) => ({ id, title, updatedAt, pinned: !!pin })), [listSig]);
+  // Arama kutusu gizliyken eski arama listeyi suzmeye devam etmesin
+  const query = conversations.length >= SEARCH_AFTER ? search.trim().toLocaleLowerCase(lang) : '';
+  const matchIds = useMemo(() => (!query ? null : new Set(conversations
+    .filter(c => c.title.toLocaleLowerCase(lang).includes(query) || c.messages.some(m => m.text.toLocaleLowerCase(lang).includes(query)))
+    .map(c => c.id))), [conversations, query, lang]);
   const visible = useMemo(() => {
-    // Arama kutusu gizliyken eski arama listeyi suzmeye devam etmesin
-    const q = conversations.length >= SEARCH_AFTER ? search.trim().toLocaleLowerCase(lang) : '';
-    const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
-    if (!q) return sorted;
-    return sorted.filter(c =>
-      c.title.toLocaleLowerCase(lang).includes(q) ||
-      c.messages.some(m => m.text.toLocaleLowerCase(lang).includes(q)));
-  }, [conversations, search, lang]);
-  const { today, yesterday, older } = useMemo(() => groupByDate(visible), [visible]);
+    const sorted = [...listMeta].sort((a, b) => b.updatedAt - a.updatedAt);
+    return matchIds ? sorted.filter(c => matchIds.has(c.id)) : sorted;
+  }, [listMeta, matchIds]);
+  const { pinned, today, yesterday, older } = useMemo(() => groupByDate(visible), [visible]);
 
   useEffect(() => {
     const loaded = loadConversations();
@@ -741,8 +848,24 @@ export default function Home() {
     setSettings(loadSettings());
     setDesktopOffer(offersDesktopApp());
     setCanUseVoice(voiceSupported());
+    try {
+      const draft = localStorage.getItem(LS_DRAFT);
+      if (draft) {
+        setInput(draft);
+        requestAnimationFrame(() => { const el = inputRef.current; if (el) { el.style.height = 'auto'; el.style.height = `${Math.min(el.scrollHeight, 240)}px`; } });
+      }
+    } catch {}
     setHydrated(true);
   }, []);
+
+  // Gonderilmemis metin sayfa yenilense de kaybolmasin
+  useEffect(() => {
+    if (!hydrated) return;
+    const handle = setTimeout(() => {
+      try { if (input.trim()) localStorage.setItem(LS_DRAFT, input); else localStorage.removeItem(LS_DRAFT); } catch {}
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [input, hydrated]);
 
   // Masaustu uygulamasi girissiz kullanilamaz (cikis yapilinca ya da oturum dolunca da gecerli)
   useEffect(() => {
@@ -772,9 +895,12 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try { localStorage.setItem(LS_SETTINGS, JSON.stringify(settings)); } catch {}
-    document.documentElement.dataset.theme = settings.theme;
     notifySettingsChanged();
   }, [settings, hydrated]);
+
+  useEffect(() => {
+    if (hydrated) document.documentElement.dataset.theme = theme;
+  }, [theme, hydrated]);
 
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
@@ -894,11 +1020,23 @@ export default function Home() {
     return () => clearTimeout(handle);
   }, [undo]);
 
+  // Son listeyi ref'ten okur: boylece her jetonda yeni bir fonksiyon olusup kenar cubugunu cizdirmez
+  const convsRef = useRef(conversations);
+  useEffect(() => { convsRef.current = conversations; }, [conversations]);
   const deleteConversation = useCallback((id: string) => {
-    offerUndo(t.deleted, conversations);
+    offerUndo(t.deleted, convsRef.current);
     setConversations(prev => prev.filter(c => c.id !== id));
     if (id === activeId) setActiveId('');
-  }, [activeId, conversations, offerUndo, t.deleted]);
+  }, [activeId, offerUndo, t.deleted]);
+
+  const togglePin = useCallback((id: string) => {
+    setConversations(prev => prev.map(c => (c.id === id ? { ...c, pinned: !c.pinned } : c)));
+  }, []);
+
+  const renameConversation = useCallback((id: string, title: string) => {
+    // updatedAt degismez: yeniden adlandirmak sohbeti listenin basina tasimasin
+    setConversations(prev => prev.map(c => (c.id === id ? { ...c, title, renamed: true } : c)));
+  }, []);
 
   const deleteAllConversations = useCallback(() => {
     offerUndo(t.deletedAll, conversations);
@@ -913,6 +1051,36 @@ export default function Home() {
     URL.revokeObjectURL(url);
   }, [conversations]);
 
+  const exportActiveChat = useCallback(() => {
+    if (!activeConv) return;
+    const body = activeConv.messages
+      .filter(m => m.text)
+      .map(m => (m.role === 'user' ? `### ${t.you}\n\n${m.text}` : `### YamanAI\n\n${m.text}`))
+      .join('\n\n---\n\n');
+    const md = `# ${activeConv.title}\n\n${body}\n`;
+    const slug = activeConv.title.toLocaleLowerCase(lang).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '').slice(0, 40) || 'sohbet';
+    const url = URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = `yamanai-${slug}.md`; a.click();
+    URL.revokeObjectURL(url);
+  }, [activeConv, t.you, lang]);
+
+  // Ayni kimlikli sohbet varsa yerel olan korunur; yalnizca yeni olanlar eklenir
+  const importConversations = useCallback(async (file: File) => {
+    const parsed = file.size > 20_000_000 ? null : parseImport(await file.text().catch(() => ''));
+    if (!parsed) { setNotice(t.importFailed); return; }
+    const known = new Set(conversations.map(c => c.id));
+    const fresh = parsed.filter(c => !known.has(c.id));
+    if (fresh.length) setConversations(prev => [...prev, ...fresh.filter(c => !prev.some(p => p.id === c.id))]);
+    setNotice(t.imported(fresh.length));
+  }, [t, conversations]);
+
+  useEffect(() => {
+    if (!notice) return;
+    const handle = setTimeout(() => setNotice(null), UNDO_MS);
+    return () => clearTimeout(handle);
+  }, [notice]);
+
   const stopGeneration = useCallback(() => {
     abortControllerRef.current?.abort();
   }, []);
@@ -924,7 +1092,7 @@ export default function Home() {
     const convId = conv.id;
     setFreshIds(prev => new Set(prev).add(aiId));
     setConversations(prev => {
-      const next: Conversation = { ...conv, messages: [...base, { id: aiId, role: 'ai', text: '' }], updatedAt: Date.now() };
+      const next: Conversation = { ...conv, messages: [...base, { id: aiId, role: 'ai', text: '', at: Date.now() }], updatedAt: Date.now() };
       const idx = prev.findIndex(c => c.id === convId);
       if (idx === -1) return [next, ...prev];
       const copy = [...prev]; copy[idx] = next; return copy;
@@ -934,13 +1102,14 @@ export default function Home() {
 
     const patchAi = (patch: Partial<Message>) => {
       setConversations(prev => prev.map(c => c.id !== convId ? c : {
-        ...c, updatedAt: Date.now(), messages: c.messages.map(m => m.id === aiId ? { ...m, ...patch } : m),
+        // updatedAt yanit basinda ayarlandi: her jetonda degistirmek kenar cubugunu bosuna cizdirir
+        ...c, messages: c.messages.map(m => m.id === aiId ? { ...m, ...patch } : m),
       }));
     };
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    const history = base.filter(m => m.text).map(m => ({ role: m.role === 'ai' ? 'assistant' : 'user', content: m.text }));
+    const history = toApiHistory(base);
 
     try {
       const res = await fetch('/api/chat', {
@@ -953,7 +1122,8 @@ export default function Home() {
         const data = await res.json().catch(() => null);
         const code = data?.error;
         if (code === 'daily_limit') setUsage(toUsage(data));
-        patchAi({ status: code === 'rate_limited' || code === 'not_configured' || code === 'daily_limit' ? code : 'generic' });
+        const known = ['rate_limited', 'not_configured', 'daily_limit', 'upstream_failed'] as const;
+        patchAi({ status: (known as readonly string[]).includes(code) ? code : 'generic' });
         return code === 'daily_limit' ? 'daily_limit' : 'failed';
       }
       const usedNow = Number(res.headers.get('X-Usage-Used'));
@@ -961,14 +1131,16 @@ export default function Home() {
 
       const reader  = res.body.getReader();
       const decoder = new TextDecoder('utf-8', { fatal: false });
-      let acc = '', buffer = '';
+      let acc = '', buffer = '', truncated = false;
       const onLine = (raw: string) => {
         const line = raw.trim();
         if (!line.startsWith('data:')) return;
         const js = line.slice(5).trim();
         if (!js || js === '[DONE]') return;
         try {
-          const d: string = JSON.parse(js).delta ?? '';
+          const data = JSON.parse(js);
+          if (data.finish === 'length') { truncated = true; return; }
+          const d: string = data.delta ?? '';
           if (d) { acc += d; patchAi({ text: acc }); onVoiceDelta?.(d); }
         } catch {}
       };
@@ -983,6 +1155,7 @@ export default function Home() {
         }
       }
       if (!acc) { patchAi({ status: 'generic' }); result = 'failed'; }
+      else if (truncated) patchAi({ truncated: true });
     } catch (err: unknown) {
       const aborted = (err as Error)?.name === 'AbortError';
       patchAi({ status: aborted ? 'stopped' : 'network' });
@@ -998,7 +1171,7 @@ export default function Home() {
   const sendMessage = useCallback((text: string, onVoiceDelta?: (delta: string) => void): Promise<TurnResult> => {
     const trimmed = text.trim();
     if (exhausted) return Promise.resolve('daily_limit');
-    if (!trimmed || loading) return Promise.resolve('failed');
+    if (!trimmed || loading || trimmed.length > MAX_INPUT_CHARS) return Promise.resolve('failed');
 
     // Mesaj sayacini artir (login popup icin)
     if (!session) {
@@ -1008,7 +1181,7 @@ export default function Home() {
 
     const conv: Conversation = conversations.find(c => c.id === activeId)
       ?? { id: uid(), title: trimmed.slice(0, 50), messages: [], updatedAt: Date.now() };
-    const userMsg: Message = { id: uid(), role: 'user', text: trimmed };
+    const userMsg: Message = { id: uid(), role: 'user', text: trimmed, at: Date.now() };
     setFreshIds(prev => new Set(prev).add(userMsg.id));
     setActiveId(conv.id);
     resetInput();
@@ -1047,6 +1220,21 @@ export default function Home() {
     void runCompletion(activeConv, msgs.slice(0, -1));
   }, [loading, exhausted, activeConv, runCompletion]);
 
+  // Kesilen yanit: gorunur bir "devam et" mesajiyla model kaldigi yerden surdurur
+  const continueAnswer = useCallback(() => { void sendMessage(t.continuePrompt); }, [sendMessage, t.continuePrompt]);
+
+  // Bir kullanici mesajini duzenle: ondan sonraki her sey atilir, yanit yeniden uretilir
+  const editMessage = useCallback((id: string, text: string) => {
+    const trimmed = text.trim();
+    if (loading || exhausted || !activeConv || !trimmed) return;
+    const idx = activeConv.messages.findIndex(m => m.id === id);
+    if (idx === -1) return;
+    const edited: Message = { id: uid(), role: 'user', text: trimmed, at: Date.now() };
+    setFreshIds(prev => new Set(prev).add(edited.id));
+    const title = idx === 0 && !activeConv.renamed ? trimmed.slice(0, 50) : activeConv.title;
+    void runCompletion({ ...activeConv, title }, [...activeConv.messages.slice(0, idx), edited]);
+  }, [loading, exhausted, activeConv, runCompletion]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // isComposing: Japonca, Cince gibi dillerde Enter secimi onaylar, mesaji gondermez
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void sendMessage(input); }
@@ -1072,13 +1260,52 @@ export default function Home() {
       else if (showLoginPopup) closeLoginPopup();
       else if (showDesktopPopup) closeDesktopPopup();
       else if (sidebarOpen) setSidebarOpen(false);
+      // Sesli sohbette Escape sesli sohbeti kapatir, bu yuzden orada yaniti durdurmaz
+      else if (loading && !voiceAudio && !e.defaultPrevented) stopGeneration();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [showSettings, showLoginPopup, showDesktopPopup, sidebarOpen, closeLoginPopup, closeDesktopPopup]);
+  }, [showSettings, showLoginPopup, showDesktopPopup, sidebarOpen, closeLoginPopup, closeDesktopPopup, loading, voiceAudio, stopGeneration]);
+
+  // Kisayollar: Ctrl/Cmd+Shift+O yeni sohbet, "/" yazi kutusuna odaklanir
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); startNewChat(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+        // Arama kutusu yalnizca yeterince sohbet varken gorunur; yoksa tarayicinin kisayolu calissin
+        const box = document.getElementById('chat-search') as HTMLInputElement | null;
+        if (!box) return;
+        e.preventDefault();
+        // Cekmece yalnizca dar ekranda vardir; genis ekranda acik isaretlemek daraltinca kendiliginden acar
+        if (matchMedia('(max-width: 767px)').matches) setSidebarOpen(true);
+        requestAnimationFrame(() => { box.focus(); box.select(); });
+        return;
+      }
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      inputRef.current?.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [startNewChat]);
+
+  // Baska sekmede yapilan degisiklikleri al; akan yanit varken bu sekmenin hali korunur
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== LS_KEY || loading) return;
+      const next = loadConversations();
+      setConversations(next);
+      setActiveId(id => (id && !next.some(c => c.id === id) ? '' : id));
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [loading]);
 
   const modelShort = MODEL_SHORT_MAP[effectiveModel];
-  const toggleTheme = () => setSettings(s => ({ ...s, theme: s.theme === 'dark' ? 'light' : 'dark' }));
+  const toggleTheme = () => setSettings(s => ({ ...s, theme: theme === 'dark' ? 'light' : 'dark' }));
   const isEmpty = messages.length === 0;
   const hasChats = conversations.length > 0;
 
@@ -1090,11 +1317,12 @@ export default function Home() {
   return (
     <GateContext.Provider value={gate}>
     <div className="flex h-dvh bg-y-canvas text-y-ink font-sans overflow-hidden relative">
+      <a href="#composer" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:px-4 focus:py-2.5 focus:rounded-full focus:bg-y-bubble focus:text-y-bubble-ink focus:font-bold">{t.skipToInput}</a>
       {showLoginPopup && !session && <LoginPopup onClose={closeLoginPopup} t={t} guestLimit={guestLimit} userLimit={userLimit} />}
 
       {showSettings && (
         <SettingsModal settings={settings} onSave={setSettings} onClose={() => setShowSettings(false)}
-          onDeleteAll={deleteAllConversations} onExport={exportConversations} t={t} usage={usage} />
+          onDeleteAll={deleteAllConversations} onExport={exportConversations} onImport={importConversations} t={t} usage={usage} />
       )}
 
       {showDesktopPopup && <DesktopPopup onClose={closeDesktopPopup} t={t} />}
@@ -1108,7 +1336,7 @@ export default function Home() {
         <div className="flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-2.5">
             <LogoMark size={28} />
-            <span className="font-extrabold text-xl tracking-tight">YamanAI</span>
+            <span translate="no" className="font-extrabold text-xl tracking-tight">YamanAI</span>
             <span className="text-xs font-semibold text-y-side-muted border border-y-side-line px-1.5 rounded-md">{t.beta}</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} aria-label={t.closeMenu} className={`md:hidden ${SIDE_ICON_BTN}`}><X size={18} /></button>
@@ -1126,14 +1354,15 @@ export default function Home() {
             <label htmlFor="chat-search" className="sr-only">{t.searchChats}</label>
             <Search size={15} aria-hidden="true" className="absolute left-6 top-1/2 translate-y-[-30%] text-y-side-muted pointer-events-none" />
             <input id="chat-search" type="search" value={search} onChange={e => setSearch(e.target.value)} placeholder={t.searchChats}
-              className="w-full h-10 pl-9 pr-3 rounded-full bg-y-side-hover text-y-side-ink placeholder:text-y-side-muted text-[15px] outline-none [&::-webkit-search-cancel-button]:appearance-none" />
+              className="w-full h-10 pl-9 pr-3 rounded-full bg-y-side-hover text-y-side-ink placeholder:text-y-side-muted text-[15px] [&::-webkit-search-cancel-button]:appearance-none" />
           </div>
         )}
 
-        <nav aria-label={t.history} className="flex-1 overflow-y-auto px-2 pb-3">
-          <SidebarGroup label={t.today}     convs={today}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
-          <SidebarGroup label={t.yesterday} convs={yesterday} activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
-          <SidebarGroup label={t.older}     convs={older}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} t={t} />
+        <nav aria-label={t.history} className="flex-1 overflow-y-auto overscroll-contain px-2 pb-3">
+          <SidebarGroup label={t.pinned}    convs={pinned}    activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} onRename={renameConversation} onPin={togglePin} t={t} />
+          <SidebarGroup label={t.today}     convs={today}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} onRename={renameConversation} onPin={togglePin} t={t} />
+          <SidebarGroup label={t.yesterday} convs={yesterday} activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} onRename={renameConversation} onPin={togglePin} t={t} />
+          <SidebarGroup label={t.older}     convs={older}     activeId={activeId} onSelect={loadConversation} onDelete={deleteConversation} onRename={renameConversation} onPin={togglePin} t={t} />
           {!hasChats && <p className="text-[15px] leading-relaxed text-y-side-muted px-3 pt-5">{t.emptyHistory}</p>}
           {hasChats && visible.length === 0 && <p className="text-[15px] text-y-side-muted px-3 pt-5">{t.noMatches}</p>}
         </nav>
@@ -1150,7 +1379,7 @@ export default function Home() {
             <div className="flex items-center gap-3 p-2 rounded-xl">
               {session.user?.image
                 // eslint-disable-next-line @next/next/no-img-element
-                ? <img src={session.user.image} alt="" className="size-8 rounded-full flex-shrink-0" />
+                ? <img src={session.user.image} alt="" width={32} height={32} referrerPolicy="no-referrer" className="size-8 rounded-full flex-shrink-0" />
                 : <div className="size-8 rounded-full bg-y-side-active flex items-center justify-center text-xs font-bold flex-shrink-0">
                     {session.user?.name?.[0]?.toUpperCase() ?? 'U'}
                   </div>
@@ -1200,9 +1429,15 @@ export default function Home() {
           <span className="font-bold truncate">{isEmpty ? '' : activeConv?.title}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
             <span className="text-sm font-medium text-y-muted mr-2">{modelShort}</span>
-            <button onClick={toggleTheme} aria-label={settings.theme === 'dark' ? t.lightTheme : t.darkTheme} className={ICON_BTN}>
-              {settings.theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-              <span className={TOOLTIP_CLS} aria-hidden="true">{settings.theme === 'dark' ? t.lightTheme : t.darkTheme}</span>
+            {!isEmpty && (
+              <button onClick={exportActiveChat} aria-label={t.exportChat} className={ICON_BTN}>
+                <FileDown size={18} />
+                <span className={TOOLTIP_CLS} aria-hidden="true">{t.exportChat}</span>
+              </button>
+            )}
+            <button onClick={toggleTheme} aria-label={theme === 'dark' ? t.lightTheme : t.darkTheme} className={ICON_BTN}>
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+              <span className={TOOLTIP_CLS} aria-hidden="true">{theme === 'dark' ? t.lightTheme : t.darkTheme}</span>
             </button>
             {/* Duz HTML sayfasi oldugu icin Link degil, normal baglanti */}
             <a href="/hakkinda" aria-label={t.about} className={ICON_BTN}>
@@ -1228,8 +1463,8 @@ export default function Home() {
             : (
               <div ref={threadRef} className="max-w-[808px] mx-auto px-4 md:px-6 pt-7 flex flex-col gap-7" aria-live="polite" aria-busy={streamingHere}>
                 {messages.map((msg) => (
-                  <MessageBubble key={msg.id} msg={msg} fontSize={fontClass} fresh={freshIds.has(msg.id)} t={t}
-                    onRetry={retryLast} isLast={msg.id === lastMsgId} busy={loading || exhausted} />
+                  <MessageBubble key={msg.id} msg={msg} fontSize={fontClass} fresh={freshIds.has(msg.id)} t={t} lang={lang}
+                    onRetry={retryLast} onEdit={editMessage} onContinue={continueAnswer} isLast={msg.id === lastMsgId} busy={loading || exhausted} />
                 ))}
               </div>
             )
@@ -1238,7 +1473,7 @@ export default function Home() {
 
         {/* Ebru plate + composer */}
         <div className={`y-plate-wrap absolute bottom-0 inset-x-0 z-10 pointer-events-none ${isEmpty ? 'h-[min(34dvh,300px)]' : 'h-[164px] md:h-[150px]'}`}>
-          <EbruPlate seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} theme={settings.theme} />
+          <EbruPlate seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} theme={theme} />
         </div>
 
         <div className="absolute bottom-0 inset-x-0 z-20 px-3 md:px-6 pb-3 pointer-events-none">
@@ -1252,15 +1487,22 @@ export default function Home() {
               </div>
             )}
 
-            {(undo || storageFull || voiceNotice) && (
-              <div role="status" className="y-toast flex items-center justify-between gap-4 mb-2 pl-4 pr-1.5 min-h-11 rounded-full bg-y-bubble text-y-bubble-ink text-[15px]">
-                <span className="py-2">{undo ? undo.label : voiceNotice ? t.voiceErrors[voiceNotice] : t.storageFull}</span>
+            {(undo || storageFull || voiceNotice || notice) && (
+              <div role="status" className="y-toast flex items-center justify-between gap-4 mb-2 pl-4 pr-1.5 min-h-11 rounded-3xl bg-y-bubble text-y-bubble-ink text-[15px]">
+                <span className="py-2">{undo ? undo.label : voiceNotice ? t.voiceErrors[voiceNotice] : notice ?? t.storageFull}</span>
                 {undo && (
                   <button type="button" onClick={() => { setConversations(undo.prev); setActiveId(undo.activeId); setUndo(null); }}
                     className="min-h-9 px-3 rounded-full font-bold text-[#EBCB7E] hover:bg-white/10 transition-colors duration-150">
                     {t.undo}
                   </button>
                 )}
+              </div>
+            )}
+
+            {!online && (
+              <div role="status" className="flex items-center gap-2.5 mb-2 pl-4 pr-4 py-1 min-h-11 rounded-3xl bg-y-bubble text-y-bubble-ink text-[15px]">
+                <WifiOff size={16} aria-hidden="true" className="flex-shrink-0 text-[#EBCB7E]" />
+                <span className="py-1">{t.offline}</span>
               </div>
             )}
 
@@ -1284,13 +1526,13 @@ export default function Home() {
               <VoiceBar audio={voiceAudio} t={t} onTurn={sendMessage} stopTurn={stopGeneration} onEnd={endVoice} />
             ) : (
             <div className="relative flex items-end bg-y-surface rounded-[28px] border border-y-line-strong focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
-              <textarea ref={inputRef}
+              <textarea ref={inputRef} id="composer"
                 aria-label={t.placeholder}
                 dir="auto"
                 disabled={exhausted}
                 className={`y-composer-input disabled:cursor-not-allowed block w-full bg-transparent text-y-ink pl-5 md:pl-6 ${canUseVoice ? 'pr-[108px]' : 'pr-16'} py-[18px] max-h-[240px] resize-none placeholder:text-y-subtle text-[16px] md:text-[17px] leading-[1.5]`}
                 placeholder={exhausted ? t.limitPlaceholder : t.placeholder}
-                rows={1} value={input} onChange={handleInput} onKeyDown={handleKeyDown}
+                rows={1} value={input} onChange={handleInput} onKeyDown={handleKeyDown} onFocus={() => void loadMarkdown()}
               />
               {canUseVoice && (
                 <button type="button" onClick={startVoice} disabled={loading || exhausted}
@@ -1302,20 +1544,22 @@ export default function Home() {
               )}
               <button
                 onClick={loading ? stopGeneration : () => void sendMessage(input)}
-                disabled={!loading && (!input.trim() || exhausted)}
+                disabled={!loading && (!input.trim() || exhausted || tooLong)}
                 title={loading ? t.stop : t.send}
                 aria-label={loading ? t.stop : t.send}
                 className={`y-hit absolute right-2 bottom-2 size-11 flex items-center justify-center rounded-full transition-colors duration-150 ${
                   loading ? 'bg-y-bubble text-y-bubble-ink'
-                  : input.trim() && !exhausted ? 'bg-y-accent hover:bg-y-accent-hover text-white'
+                  : input.trim() && !exhausted && !tooLong ? 'bg-y-accent hover:bg-y-accent-hover text-white'
                   : 'bg-y-surface2 text-y-subtle cursor-not-allowed'}`}>
                 {loading ? <Square size={14} fill="currentColor" /> : <ArrowUp size={20} strokeWidth={2.5} />}
               </button>
             </div>
             )}
 
-            <p className="mx-auto mt-2 w-fit max-w-full px-3 py-0.5 rounded-2xl bg-y-canvas text-center text-xs leading-snug text-y-muted">
-              {voiceAudio ? t.voiceDisclosure : (
+            <p aria-live="polite" className={`mx-auto mt-2 w-fit max-w-full px-3 py-0.5 rounded-2xl bg-y-canvas text-center text-xs leading-snug ${tooLong ? 'text-y-danger font-semibold' : 'text-y-muted'}`}>
+              {!voiceAudio && input.length > MAX_INPUT_CHARS * 0.85 ? (
+                <span className="tabular-nums">{tooLong ? t.tooLong(input.length - MAX_INPUT_CHARS) : t.charCount(input.length, MAX_INPUT_CHARS)}</span>
+              ) : voiceAudio ? t.voiceDisclosure : (
                 <>
                   <span className="hidden sm:inline"><kbd className="font-sans font-bold">Enter</kbd> {t.hintSend} · <kbd className="font-sans font-bold">Shift + Enter</kbd> {t.hintLine} · </span>
                   {t.disclosure}

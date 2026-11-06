@@ -65,7 +65,7 @@ export const viewport: Viewport = {
 
 // Ilk boyamadan once tema ve dili ayarla, boylece ekran yanip sonmez
 const PREFS_SCRIPT = `(function(){var s={};try{s=JSON.parse(localStorage.getItem('yamanai_settings')||'{}')}catch(e){}
-var d=document.documentElement;d.dataset.theme=s.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+var d=document.documentElement;d.dataset.theme=(s.theme==='dark'||s.theme==='light')?s.theme:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
 var l=s.language;if(!l||l==='auto')l=(navigator.language||'').toLowerCase().indexOf('tr')===0?'tr':'en';d.lang=l})()`;
 
 export default function RootLayout({
