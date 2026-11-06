@@ -112,6 +112,24 @@ const tests = {
       if (JSON.stringify(msgs) !== JSON.stringify(['Yeni soru', 'Yanit 3: tamam'])) throw new Error('duzenleme sonrasi: ' + JSON.stringify(msgs));
     }`);
   },
+  async 'yeniden yanitlama onceki yaniti surum olarak saklar'() {
+    await openWith(SEEN);
+    return evaluate(`async () => { ${HELPERS} ${FAKE_STREAM}
+      const box = document.getElementById('composer');
+      setVal(box, 'Soru'); await wait(50); document.querySelector('[aria-label="Gönder"]').click();
+      for (let i = 0; i < 40 && !document.querySelector('[aria-label="Yeniden yanıtla"]'); i++) await wait(100);
+      const regen = document.querySelector('[aria-label="Yeniden yanıtla"]');
+      if (!regen) throw new Error('yeniden yanitla yok; dugmeler: ' + [...document.querySelectorAll('main button')].map(b => b.getAttribute('aria-label') || b.textContent).join(', '));
+      regen.click(); await wait(100);
+      for (let i = 0; i < 40 && !document.querySelector('[aria-label="Yeniden yanıtla"]'); i++) await wait(100);
+      const counter = () => document.querySelector('[role=group][aria-label="Yanıt sürümleri"] span')?.textContent;
+      if (counter() !== '2/2') throw new Error('sayac: ' + counter());
+      document.querySelector('[aria-label="Önceki sürüm"]').click(); await wait(200);
+      const shown = [...document.querySelectorAll('.y-prose')].at(-1).textContent;
+      if (!shown.includes('Yanit 1')) throw new Error('onceki surum gosterilmedi: ' + shown);
+      if (counter() !== '1/2') throw new Error('sayac: ' + counter());
+    }`);
+  },
   async 'taslak kaydedilir, uzun mesaj engellenir'() {
     await openWith(SEEN);
     return evaluate(`async () => { ${HELPERS}
@@ -143,6 +161,14 @@ const tests = {
       byText('Kaydet').focus();
       dialog.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
       if (!dialog.contains(document.activeElement) || document.activeElement === byText('Kaydet')) throw new Error('odak basa donmedi: ' + document.activeElement?.outerHTML.slice(0, 80));
+    }`);
+  },
+  async 'girissiz kullanicida model dugmesi giris penceresini acar'() {
+    await openWith(SEED);
+    return evaluate(`async () => { ${HELPERS}
+      document.querySelector('[aria-label^="GPT-4o Mini."]').click(); await wait(300);
+      const title = document.querySelector('[role=dialog] h2')?.textContent;
+      if (title !== 'Giriş yap, daha fazlasını aç') throw new Error('giris penceresi acilmadi: ' + title);
     }`);
   },
   async 'telefonda yatay tasma yok'() {

@@ -71,3 +71,14 @@ test('reactPreviewDoc: bilesen bulunur, import satirlari ve </script> etkisizles
   assert.doesNotMatch(doc, /import React from/);
   assert.doesNotMatch(doc, /\{'<\/script>'\}/);
 });
+
+test('parseImport: yanit surumleri korunur, bozuk surum listesi atlanir', () => {
+  const out = parseImport(JSON.stringify([{ id: 'v', title: 't', messages: [
+    msg('user', 'soru'),
+    msg('ai', 'ikinci', { variants: ['birinci', 'ikinci'], vi: 1 }),
+    msg('ai', 'bozuk', { variants: ['a', 5] }),
+  ] }]));
+  assert.deepEqual(out[0].messages[1].variants, ['birinci', 'ikinci']);
+  assert.equal(out[0].messages[1].vi, 1);
+  assert.equal(out[0].messages[2].variants, undefined);
+});

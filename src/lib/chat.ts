@@ -13,6 +13,9 @@ export interface Message {
   at?: number;
   /** Yanit uzunluk sinirinda kesildi */
   truncated?: boolean;
+  /** Yeniden yanitlanan yanitin tum surumleri; vi gosterilen surum. vi = variants.length ise basarisiz yeni deneme */
+  variants?: string[];
+  vi?: number;
 }
 
 export interface Conversation {
@@ -73,7 +76,7 @@ export function parseImport(raw: string): Conversation[] | null {
       if (!c || typeof c.id !== 'string' || typeof c.title !== 'string' || !Array.isArray(c.messages)) continue;
       const messages: Message[] = c.messages
         .filter((m: Message) => m && typeof m.text === 'string' && (m.role === 'user' || m.role === 'ai'))
-        .map((m: Message) => ({ id: typeof m.id === 'string' ? m.id : uid(), role: m.role, text: m.text, ...(typeof m.at === 'number' ? { at: m.at } : {}), ...(m.status ? { status: m.status } : {}) }));
+        .map((m: Message) => ({ id: typeof m.id === 'string' ? m.id : uid(), role: m.role, text: m.text, ...(typeof m.at === 'number' ? { at: m.at } : {}), ...(Array.isArray(m.variants) && m.variants.every(v => typeof v === 'string') ? { variants: m.variants, vi: Number.isInteger(m.vi) ? m.vi : m.variants.length - 1 } : {}), ...(m.status ? { status: m.status } : {}) }));
       if (!messages.length) continue;
       out.push({ id: c.id, title: c.title.slice(0, 80), messages, updatedAt: Number(c.updatedAt) || Date.now(), ...(c.renamed ? { renamed: true } : {}), ...(c.pinned ? { pinned: true } : {}) });
     }

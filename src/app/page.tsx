@@ -6,7 +6,7 @@ import {
 import {
   Plus, Menu, X, MonitorDown, Copy, Check, Trash2, Play, Search,
   Settings, HelpCircle, Info, Sun, Moon, Download, Type, LogIn, LogOut,
-  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic, Pencil, Upload, FileDown, WrapText, Pin, PinOff, WifiOff, Monitor,
+  ArrowUp, ArrowDown, Square, RotateCcw, AlertCircle, Lock, Mic, Pencil, Upload, FileDown, WrapText, Pin, PinOff, WifiOff, Monitor, ChevronLeft, ChevronRight, ChevronsUpDown,
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
@@ -436,9 +436,9 @@ const MsgTime = ({ at, lang }: { at?: number; lang: string }) => {
   return <time dateTime={d.toISOString()} title={full} className="px-1.5 text-xs text-y-subtle tabular-nums">{label}</time>;
 };
 
-const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, onContinue, isLast, busy }: {
+const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, onContinue, onVariant, isLast, busy }: {
   msg: Message; fontSize: string; fresh: boolean; t: Strings; lang: string; onRetry: () => void;
-  onEdit: (id: string, text: string) => void; onContinue: () => void; isLast: boolean; busy: boolean;
+  onEdit: (id: string, text: string) => void; onContinue: () => void; onVariant: (id: string, index: number) => void; isLast: boolean; busy: boolean;
 }) => {
   const [editing, setEditing] = useState(false);
   if (msg.role === 'user') {
@@ -466,6 +466,22 @@ const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, on
   }
   const failed = msg.status && msg.status !== 'stopped';
   const waiting = !msg.text && !msg.status;
+  // Surum gezgini: yeniden yanitlanmis yanitlarda onceki yanitlara donmeyi saglar
+  const variants = msg.variants ?? [];
+  const vi = msg.vi ?? variants.length - 1;
+  const slots = variants.length + (vi >= variants.length ? 1 : 0); // basarisiz/akan yeni deneme de bir yer tutar
+  const navBtn = 'y-hit size-8 inline-flex items-center justify-center rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2 disabled:opacity-40 disabled:pointer-events-none transition-colors duration-150';
+  const variantNav = variants.length > 0 && slots > 1 && !waiting && (
+    <div role="group" aria-label={t.versions} className="inline-flex items-center">
+      <button type="button" onClick={() => onVariant(msg.id, vi - 1)} disabled={busy || vi <= 0} aria-label={t.prevVersion} title={t.prevVersion} className={navBtn}>
+        <ChevronLeft size={16} />
+      </button>
+      <span className="min-w-9 text-center text-xs font-semibold text-y-muted tabular-nums">{vi + 1}/{slots}</span>
+      <button type="button" onClick={() => onVariant(msg.id, vi + 1)} disabled={busy || vi + 1 >= variants.length} aria-label={t.nextVersion} title={t.nextVersion} className={navBtn}>
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
   return (
     <div className={`group ${fresh ? 'y-msg-new' : ''}`}>
       {waiting ? <InkDrop label={t.typing} /> : msg.text ? <MarkdownRenderer content={msg.text} fontSize={fontSize} t={t} /> : null}
@@ -494,9 +510,11 @@ const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, on
           )}
         </div>
       )}
+      {failed && variantNav && <div className="mt-1">{variantNav}</div>}
 
       {msg.text && !failed && (
-        <div className={`mt-2 flex items-center gap-1 transition-opacity duration-150 ${isLast ? '' : 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100'}`}>
+        <div className={`mt-2 flex items-center gap-1 transition-opacity duration-150 ${isLast || variantNav ? '' : 'pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100'}`}>
+          {variantNav}
           <CopyButton text={msg.text} showLabel={false} t={t} className="size-8 rounded-full text-y-subtle hover:text-y-ink hover:bg-y-surface2" />
           {isLast && !busy && (
             <button type="button" onClick={onRetry} title={t.regenerate} aria-label={t.regenerate}
@@ -1086,13 +1104,13 @@ export default function Home() {
   }, []);
 
   // Yaniti akitir. `base`, modele gonderilecek mesajlardir (son mesaj kullanicinin).
-  const runCompletion = useCallback(async (conv: Conversation, base: Message[], onVoiceDelta?: (delta: string) => void): Promise<TurnResult> => {
+  const runCompletion = useCallback(async (conv: Conversation, base: Message[], onVoiceDelta?: (delta: string) => void, earlier?: string[]): Promise<TurnResult> => {
     let result: TurnResult = 'ok';
     const aiId = uid();
     const convId = conv.id;
     setFreshIds(prev => new Set(prev).add(aiId));
     setConversations(prev => {
-      const next: Conversation = { ...conv, messages: [...base, { id: aiId, role: 'ai', text: '', at: Date.now() }], updatedAt: Date.now() };
+      const next: Conversation = { ...conv, messages: [...base, { id: aiId, role: 'ai', text: '', at: Date.now(), ...(earlier?.length ? { variants: earlier, vi: earlier.length } : {}) }], updatedAt: Date.now() };
       const idx = prev.findIndex(c => c.id === convId);
       if (idx === -1) return [next, ...prev];
       const copy = [...prev]; copy[idx] = next; return copy;
@@ -1155,7 +1173,11 @@ export default function Home() {
         }
       }
       if (!acc) { patchAi({ status: 'generic' }); result = 'failed'; }
-      else if (truncated) patchAi({ truncated: true });
+      else {
+        // Yeniden yanitlandiysa onceki yanitlar kaybolmaz: hepsi surum olarak saklanir
+        if (earlier?.length) patchAi({ variants: [...earlier, acc], vi: earlier.length });
+        if (truncated) patchAi({ truncated: true });
+      }
     } catch (err: unknown) {
       const aborted = (err as Error)?.name === 'AbortError';
       patchAi({ status: aborted ? 'stopped' : 'network' });
@@ -1217,8 +1239,21 @@ export default function Home() {
     if (loading || exhausted || !activeConv) return;
     const msgs = activeConv.messages;
     if (msgs[msgs.length - 1]?.role !== 'ai') return;
-    void runCompletion(activeConv, msgs.slice(0, -1));
+    const last = msgs[msgs.length - 1];
+    const prev = last.variants?.length ? last.variants : last.text && !last.status ? [last.text] : [];
+    void runCompletion(activeConv, msgs.slice(0, -1), undefined, prev);
   }, [loading, exhausted, activeConv, runCompletion]);
+
+  // Yanit surumleri arasinda gecis: gosterilen surum modele giden gecmise de o haliyle girer
+  const selectVariant = useCallback((id: string, index: number) => {
+    setConversations(prev => prev.map(c => c.id !== activeId ? c : {
+      ...c, messages: c.messages.map(m => {
+        if (m.id !== id || m.variants?.[index] === undefined) return m;
+        // Secilen surum tamamlanmis bir yanittir: hata ve kesilme isaretleri o surume ait degil
+        return { ...m, text: m.variants[index], vi: index, status: undefined, truncated: undefined };
+      }),
+    }));
+  }, [activeId]);
 
   // Kesilen yanit: gorunur bir "devam et" mesajiyla model kaldigi yerden surdurur
   const continueAnswer = useCallback(() => { void sendMessage(t.continuePrompt); }, [sendMessage, t.continuePrompt]);
@@ -1428,7 +1463,14 @@ export default function Home() {
         <div className={`hidden md:flex items-center justify-between gap-4 h-14 pl-8 pr-5 flex-shrink-0 border-b transition-colors duration-150 ${isEmpty ? 'border-transparent' : 'border-y-line'}`}>
           <span className="font-bold truncate">{isEmpty ? '' : activeConv?.title}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
-            <span className="text-sm font-medium text-y-muted mr-2">{modelShort}</span>
+            {/* Model degistirici: girisliyse iki model arasinda gecer, degilse giris penceresini acar (GPT-4o giris ister) */}
+            <button type="button" onClick={signedIn ? () => setSettings(s => ({ ...s, model: s.model === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o' })) : requireLogin}
+              title={signedIn ? t.switchModel(MODEL_SHORT_MAP[effectiveModel === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o']) : t.modelLocked}
+              aria-label={`${modelShort}. ${signedIn ? t.switchModel(MODEL_SHORT_MAP[effectiveModel === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o']) : t.modelLocked}`}
+              className="mr-1 min-h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-sm font-medium text-y-muted hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150">
+              {modelShort}
+              {signedIn ? <ChevronsUpDown size={14} aria-hidden="true" /> : <Lock size={12} aria-hidden="true" />}
+            </button>
             {!isEmpty && (
               <button onClick={exportActiveChat} aria-label={t.exportChat} className={ICON_BTN}>
                 <FileDown size={18} />
@@ -1464,7 +1506,7 @@ export default function Home() {
               <div ref={threadRef} className="max-w-[808px] mx-auto px-4 md:px-6 pt-7 flex flex-col gap-7" aria-live="polite" aria-busy={streamingHere}>
                 {messages.map((msg) => (
                   <MessageBubble key={msg.id} msg={msg} fontSize={fontClass} fresh={freshIds.has(msg.id)} t={t} lang={lang}
-                    onRetry={retryLast} onEdit={editMessage} onContinue={continueAnswer} isLast={msg.id === lastMsgId} busy={loading || exhausted} />
+                    onRetry={retryLast} onEdit={editMessage} onContinue={continueAnswer} onVariant={selectVariant} isLast={msg.id === lastMsgId} busy={loading || exhausted} />
                 ))}
               </div>
             )
