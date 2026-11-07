@@ -22,3 +22,19 @@ FIRST VIEWPORT: 288px sidebar with brand, red New Chat and history; header with 
 FORM: Ebru, pick card from my ordered list (position 1). seed:30fc19df0717ce8b
 
 FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+
+## Direction contract: design 2 "Gece Boğaz'ı" (user-selectable alternate, signed-in only)
+
+Users pick Design 1 (Ebru, above) or Design 2 in Settings; guests always get Design 1. Both share layout, controls and every feature; Design 2 swaps type, palette, density and the signature move only.
+
+THESIS: The chat at night on the Bosphorus: the answer arrives as bridge light reaching the water. Refuses grey-on-white chat and the neon-on-black "AI" look.
+
+OWN-WORLD: Night #070D1F ground, sidebar #0B142B, raised #121D3B, hairline #1F2C50; sodium gold #E8B65A for the primary action, selection and the reflection; mist #9FB3D9 secondary; text #F2EEE4. Always night (ignores light/dark). Bodoni Moda for brand, chat title and greeting; Manrope for all UI and reading; JetBrains Mono for code only. Pills for controls, 14px code blocks, soft deep shadows on floating things.
+
+STORY: A signed-in visitor switches to Gece Boğaz'ı, the room goes dark and calm, the answer reads in warm light; nothing moves until an answer arrives.
+
+FIRST VIEWPORT: Same shell as Ebru: 288px night sidebar, gold New Chat, history with a gold dot on the active chat; header with Bodoni title and model pill; 760px thread; pill composer on a dark water band where gold light columns reflect, shimmering only while an answer streams, static under reduced motion.
+
+FORM: Gece Boğaz'ı, impeccable's pick (position 1 of my ordered list), chosen by the user over the roll. seed:03f4fda04b27b7a1
+
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

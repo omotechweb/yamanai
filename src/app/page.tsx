@@ -12,6 +12,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useSession, signIn, signOut } from 'next-auth/react';
 import EbruPlate from '@/components/EbruPlate';
+import BogazWater from '@/components/BogazWater';
 import { LogoMark, ChatMark } from '@/components/Mark';
 import { VoiceBar } from '@/components/VoiceBar';
 import { useIsDesktopApp } from '@/lib/desktop';
@@ -43,6 +44,10 @@ interface Usage {
 }
 
 // Giris gerektiren ozellikler: sunucu da ayrica uygular, bu yalnizca arayuz icin
+type Design = 'ebru' | 'bogaz';
+// Etkin tasarim: kenar cubugu gibi derin bilesenler kendi isaretlerini buna gore secer
+const DesignContext = createContext<Design>('ebru');
+
 const GateContext = createContext<{ signedIn: boolean; requireLogin: () => void }>({ signedIn: false, requireLogin: () => {} });
 
 export interface AppSettings {
@@ -51,6 +56,8 @@ export interface AppSettings {
   model: 'gpt-4o' | 'gpt-4o-mini';
   systemPrompt: string;
   language: LangPref;
+  /** Gorsel tasarim: 1 Ebru, 2 Gece Bogaz'i. Gece Bogaz'i yalnizca girisli kullanicilarda uygulanir */
+  design: Design;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -74,6 +81,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   model: 'gpt-4o',
   systemPrompt: '',
   language: 'auto',
+  design: 'ebru',
 };
 
 const FONT_SIZE_MAP   = { sm: 'text-[15px]', base: 'text-[17px]', lg: 'text-[19px]' };
@@ -149,7 +157,7 @@ const LoginPopup = memo(({ onClose, t, guestLimit, userLimit }: { onClose: () =>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="login-title" className={`${MODAL_PANEL} max-w-sm rounded-2xl p-7`}>
         <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} absolute top-3 right-3 size-8`}><X size={18} /></button>
         <LogoMark size={36} className="mb-4" />
-        <h2 id="login-title" className="text-xl font-bold tracking-tight mb-2 pr-6 text-balance">{t.loginTitle}</h2>
+        <h2 id="login-title" className="y-display text-xl font-bold tracking-tight mb-2 pr-6 text-balance">{t.loginTitle}</h2>
         <ul className="mb-6 space-y-2">
           {t.loginBenefits(guestLimit, userLimit).map(benefit => (
             <li key={benefit} className="flex items-start gap-2.5 text-y-muted leading-snug">
@@ -197,11 +205,11 @@ const DesktopPopup = memo(({ onClose, t }: { onClose: () => void; t: Strings }) 
     <div className={MODAL_BACKDROP} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="desktop-title" className={`${MODAL_PANEL} max-w-md rounded-2xl p-7`}>
         <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} absolute top-3 right-3 size-8`}><X size={18} /></button>
-        <h2 id="desktop-title" className="text-xl font-bold tracking-tight mb-2 pr-6">{t.desktopTitle}</h2>
+        <h2 id="desktop-title" className="y-display text-xl font-bold tracking-tight mb-2 pr-6">{t.desktopTitle}</h2>
         <p className="text-y-muted mb-6 leading-relaxed">{t.desktopBody}</p>
         <div className="flex flex-col gap-1">
           <a href={DOWNLOAD_URL} download
-            className="w-full min-h-12 px-5 bg-y-accent hover:bg-y-accent-hover text-white font-semibold rounded-full transition-colors duration-150 flex items-center justify-center gap-2">
+            className="w-full min-h-12 px-5 bg-y-accent hover:bg-y-accent-hover text-y-on-accent font-semibold rounded-full transition-colors duration-150 flex items-center justify-center gap-2">
             <MonitorDown size={18} /> {t.desktopDownload}
           </a>
           <button onClick={onClose} className="min-h-11 text-sm font-medium text-y-muted hover:text-y-ink rounded-full transition-colors duration-150">{t.desktopLater}</button>
@@ -418,7 +426,7 @@ const UserEditor = memo(({ initial, fontSize, t, onSubmit, onCancel }: {
         <span className="text-xs text-y-muted px-1">{t.editHint}</span>
         <div className="flex items-center gap-1.5 ml-auto">
           <button type="button" onClick={onCancel} className="min-h-9 px-3.5 text-sm font-semibold text-y-muted hover:text-y-ink rounded-full hover:bg-y-surface2 transition-colors duration-150">{t.cancel}</button>
-          <button type="button" onClick={submit} disabled={!value.trim() || value.length > MAX_INPUT_CHARS} className="min-h-9 px-4 text-sm font-bold text-white bg-y-accent hover:bg-y-accent-hover disabled:opacity-50 rounded-full transition-colors duration-150">{t.editSave}</button>
+          <button type="button" onClick={submit} disabled={!value.trim() || value.length > MAX_INPUT_CHARS} className="min-h-9 px-4 text-sm font-bold text-y-on-accent bg-y-accent hover:bg-y-accent-hover disabled:opacity-50 rounded-full transition-colors duration-150">{t.editSave}</button>
         </div>
       </div>
     </div>
@@ -448,7 +456,7 @@ const MessageBubble = memo(({ msg, fontSize, fresh, t, lang, onRetry, onEdit, on
     }
     return (
       <div className={`group flex flex-col items-end ${fresh ? 'y-msg-new' : ''}`}>
-        <div dir="auto" className={`max-w-[85%] md:max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-y-bubble text-y-bubble-ink whitespace-pre-wrap break-words leading-[1.55] ${fontSize}`}>
+        <div dir="auto" className={`max-w-[85%] md:max-w-[75%] y-bubble-user rounded-2xl rounded-br-md px-4 py-2.5 bg-y-bubble text-y-bubble-ink whitespace-pre-wrap break-words leading-[1.55] ${fontSize}`}>
           {msg.text}
         </div>
         <div className="mt-1 flex items-center gap-1 transition-opacity duration-150 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100 pointer-fine:group-focus-within:opacity-100">
@@ -534,8 +542,10 @@ MessageBubble.displayName = 'MessageBubble';
 
 const WelcomeScreen = memo(({ onPromptClick, name, t }: { onPromptClick: (p: string) => void; name?: string; t: Strings }) => (
   <div className="min-h-full flex flex-col justify-center max-w-[760px] mx-auto px-4 md:px-6 pt-8 pb-6">
-    <h1 className="text-[15px] font-bold text-y-muted mb-3">{t.brandLine}</h1>
-    <p className="text-[32px] md:text-[44px] font-bold tracking-[-0.02em] leading-[1.1] text-balance">
+    {/* Selamlamanin ustunde etiket yok: baslik kendi agirligiyla konusur. Sayfanin h1'i asagidaki
+        tanitim bolumunde durur; girisli kullanicida tanitim gizli oldugu icin yalnizca ekran okuyucuya. */}
+    {name && <h1 className="sr-only">{t.brandLine}</h1>}
+    <p className="y-display text-[32px] md:text-[44px] font-bold tracking-[-0.02em] leading-[1.1] text-balance">
       {name ? t.greetingName(name) : t.greeting}
     </p>
     <p className="text-y-muted mt-3 text-[17px] leading-relaxed max-w-[52ch]">{t.greetingSub}</p>
@@ -557,7 +567,7 @@ const WelcomeScreen = memo(({ onPromptClick, name, t }: { onPromptClick: (p: str
 
     {!name && (
       <section aria-labelledby="about-title" className="mt-8">
-        <h2 id="about-title" className="font-bold">{t.aboutTitle}</h2>
+        <h1 id="about-title" className="font-bold">{t.brandLine}</h1>
         <p className="text-[15px] text-y-muted mt-1.5 leading-relaxed max-w-[65ch]">{t.aboutBody}</p>
       </section>
     )}
@@ -592,6 +602,7 @@ const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, onRenam
   onPin: (id: string) => void; t: Strings;
 }) => {
   const [renaming, setRenaming] = useState<string | null>(null);
+  const design = useContext(DesignContext);
   if (!convs.length) return null;
   return (
     <div className="mb-2">
@@ -613,7 +624,7 @@ const SidebarGroup = memo(({ label, convs, activeId, onSelect, onDelete, onRenam
             <li key={c.id} className={`group relative flex items-center h-10 w-full rounded-xl transition-colors duration-150 ${isActive ? 'bg-y-side-active' : 'hover:bg-y-side-hover'}`}>
               <button type="button" onClick={() => onSelect(c.id)} aria-current={isActive ? 'true' : undefined}
                 className={`flex-1 h-full flex items-center gap-2.5 pl-3 pr-2 text-[15px] text-left min-w-0 rounded-xl ${isActive ? 'text-y-side-ink font-bold' : 'text-y-side-ink/85'}`}>
-                <ChatMark id={c.id} />
+                {design === 'bogaz' ? <span aria-hidden="true" className={`size-[7px] mx-[6px] rounded-full flex-shrink-0 ${isActive ? 'bg-y-accent shadow-[0_0_0_3px_rgb(232_182_90_/_0.18)]' : 'bg-y-line-strong'}`} /> : <ChatMark id={c.id} />}
                 <span className="truncate">{c.title}</span>
               </button>
               <div className={`absolute right-1 top-1/2 -translate-y-1/2 flex items-center rounded-full transition-opacity duration-150 ${isActive ? 'bg-y-side-active' : 'bg-y-side-hover'} ${reveal}`}>
@@ -663,7 +674,7 @@ function Segmented<T extends string>({ label, options, value, onChange, onLocked
         return (
           <button key={o.value} type="button" role="radio" aria-checked={selected} tabIndex={selected || o.locked ? 0 : -1}
             onClick={() => (o.locked ? onLocked?.() : onChange(o.value))}
-            className={`min-h-10 flex items-center justify-center gap-2 px-2 text-[15px] font-semibold rounded-full transition-colors duration-150 ${selected ? 'bg-y-bubble text-y-bubble-ink' : 'text-y-muted hover:text-y-ink'}`}>
+            className={`min-h-10 flex items-center justify-center gap-2 px-2 text-[15px] font-semibold rounded-full transition-colors duration-150 ${selected ? 'bg-y-selected text-y-selected-ink' : 'text-y-muted hover:text-y-ink'}`}>
             {o.locked ? <Lock size={14} className="flex-shrink-0" /> : o.icon}<span className="truncate">{o.label}</span>
           </button>
         );
@@ -672,6 +683,7 @@ function Segmented<T extends string>({ label, options, value, onChange, onLocked
   );
 }
 
+/** Ayarlarda tasarimin uc rengi: secimden once neye gecilecegini gosterir */const DesignSwatch = ({ colors }: { colors: string[] }) => (  <span aria-hidden="true" className="inline-flex -space-x-1.5 flex-shrink-0">    {colors.map(c => <span key={c} className="size-3.5 rounded-full ring-1 ring-y-line-strong" style={{ background: c }} />)}  </span>);
 // ─── Settings Modal ──────────────────────────────────────────────────────────
 
 const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, onImport, t, usage }: {
@@ -691,10 +703,20 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="settings-title"
         className={`${MODAL_PANEL} max-w-lg rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[90dvh]`}>
         <div className="flex items-center justify-between h-16 px-5 sm:px-6 border-b border-y-line flex-shrink-0">
-          <h2 id="settings-title" className="font-bold text-xl tracking-tight">{t.settings}</h2>
+          <h2 id="settings-title" className="y-display font-bold text-xl tracking-tight">{t.settings}</h2>
           <button onClick={onClose} aria-label={t.close} className={`${ICON_BTN} size-9`}><X size={20} /></button>
         </div>
         <div className="px-5 sm:px-6 py-6 space-y-6 overflow-y-auto overscroll-contain">
+          <div>
+            <span className={groupLabel}>{t.designLabel}</span>
+            <p className="text-sm text-y-muted -mt-1 mb-2">{signedIn ? t.designHint : t.designLocked}</p>
+            <Segmented<Design> label={t.designLabel} value={signedIn ? local.design : 'ebru'} onChange={v => patch('design', v)} onLocked={requireLogin} options={[
+              { value: 'ebru', label: t.designEbru, icon: <DesignSwatch colors={['#F4F1EA', '#C8452F', '#101B3D']} /> },
+              { value: 'bogaz', label: t.designBogaz, locked: !signedIn, icon: <DesignSwatch colors={['#070D1F', '#E8B65A', '#9FB3D9']} /> },
+            ]} />
+          </div>
+          {/* Gece Bogaz'i her zaman gecedir; acik/koyu secimi yalnizca Ebru'yu etkiler */}
+          {(!signedIn || local.design === 'ebru') && (
           <div>
             <span className={groupLabel}>{t.theme}</span>
             <Segmented label={t.theme} value={local.theme} onChange={v => patch('theme', v)} options={[
@@ -703,6 +725,7 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
               { value: 'dark', label: t.dark, icon: <Moon size={16} /> },
             ]} />
           </div>
+          )}
           <div>
             <span className={groupLabel}>{t.language}</span>
             <Segmented<LangPref> label={t.language} value={local.language} onChange={v => patch('language', v)} options={[
@@ -771,7 +794,7 @@ const SettingsModal = memo(({ settings, onSave, onClose, onDeleteAll, onExport, 
         </div>
         <div className="flex items-center justify-end gap-2 px-5 sm:px-6 py-4 border-t border-y-line flex-shrink-0">
           <button type="button" onClick={onClose} className="min-h-11 px-4 text-[15px] font-semibold text-y-muted hover:text-y-ink rounded-full hover:bg-y-surface2 transition-colors duration-150">{t.cancel}</button>
-          <button type="button" onClick={() => { onSave(local); onClose(); }} className="min-h-11 px-6 bg-y-accent hover:bg-y-accent-hover text-white text-[15px] font-bold rounded-full transition-colors duration-150">
+          <button type="button" onClick={() => { onSave(local); onClose(); }} className="min-h-11 px-6 bg-y-accent hover:bg-y-accent-hover text-y-on-accent text-[15px] font-bold rounded-full transition-colors duration-150">
             {t.save}
           </button>
         </div>
@@ -816,6 +839,7 @@ export default function Home() {
   const systemDark = useSyncExternalStore(subscribeScheme, () => matchMedia(DARK_QUERY).matches, () => false);
   // "Sistem" secildiyse isletim sisteminin temasini anlik izler
   const theme: 'dark' | 'light' = settings.theme === 'system' ? (systemDark ? 'dark' : 'light') : settings.theme;
+  const design: Design = signedIn && settings.design === 'bogaz' ? 'bogaz' : 'ebru';
   // Bu oturumda gonderilen mesajlar: yalnizca bunlar giris animasyonu alir
   const [freshIds, setFreshIds]                 = useState<Set<string>>(() => new Set());
 
@@ -919,6 +943,30 @@ export default function Home() {
   useEffect(() => {
     if (hydrated) document.documentElement.dataset.theme = theme;
   }, [theme, hydrated]);
+
+  // Tasarim: oturum belli olana kadar ilk boyamadaki secim korunur (yanip sonmesin).
+  // Giris durumu, sonraki acilista ilk boyama betiginin dogru tasarimi secebilmesi icin saklanir.
+  useEffect(() => {
+    if (!hydrated || sessionStatus === 'loading') return;
+    const root = document.documentElement;
+    // Kullanici tasarimi degistirdiyse renkler bir anda degil, kisa bir gecisle donsun
+    let handle: ReturnType<typeof setTimeout> | undefined;
+    if (root.dataset.design && root.dataset.design !== design && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      root.classList.add('y-design-switch');
+      handle = setTimeout(() => root.classList.remove('y-design-switch'), 450);
+    }
+    root.dataset.design = design;
+    try { localStorage.setItem('yamanai_signed_in', signedIn ? '1' : '0'); } catch {}
+    return () => { if (handle) { clearTimeout(handle); root.classList.remove('y-design-switch'); } };
+  }, [design, signedIn, sessionStatus, hydrated]);
+
+  // Telefonun tarayici cubugu gercek gorunume uysun: sunucu yalnizca sistem temasini bilir,
+  // uygulama icindeki tema ve tasarim secimini burada uygulariz (iki meta etiketi de ayni renge).
+  useEffect(() => {
+    if (!hydrated) return;
+    const color = design === 'bogaz' ? '#0B142B' : theme === 'dark' ? '#101B3D' : '#E9E4D8';
+    document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach(m => { m.content = color; });
+  }, [design, theme, hydrated]);
 
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
 
@@ -1350,6 +1398,7 @@ export default function Home() {
   if (isDesktopApp && sessionStatus !== 'authenticated') return <div className="h-dvh bg-y-canvas" />;
 
   return (
+    <DesignContext.Provider value={design}>
     <GateContext.Provider value={gate}>
     <div className="flex h-dvh bg-y-canvas text-y-ink font-sans overflow-hidden relative">
       <a href="#composer" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[70] focus:px-4 focus:py-2.5 focus:rounded-full focus:bg-y-bubble focus:text-y-bubble-ink focus:font-bold">{t.skipToInput}</a>
@@ -1371,7 +1420,7 @@ export default function Home() {
         <div className="flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-2.5">
             <LogoMark size={28} />
-            <span translate="no" className="font-extrabold text-xl tracking-tight">YamanAI</span>
+            <span translate="no" className="y-display font-extrabold text-xl tracking-tight">YamanAI</span>
             <span className="text-xs font-semibold text-y-side-muted border border-y-side-line px-1.5 rounded-md">{t.beta}</span>
           </div>
           <button onClick={() => setSidebarOpen(false)} aria-label={t.closeMenu} className={`md:hidden ${SIDE_ICON_BTN}`}><X size={18} /></button>
@@ -1379,7 +1428,7 @@ export default function Home() {
 
         <div className="px-3 pt-1 pb-2">
           <button onClick={startNewChat}
-            className="flex items-center justify-center gap-2 px-3 h-11 w-full font-bold text-white bg-y-accent hover:bg-y-accent-hover rounded-full transition-colors duration-150">
+            className="flex items-center justify-center gap-2 px-3 h-11 w-full font-bold text-y-on-accent bg-y-accent hover:bg-y-accent-hover rounded-full transition-colors duration-150">
             <Plus size={18} /><span>{t.newChat}</span>
           </button>
         </div>
@@ -1444,12 +1493,12 @@ export default function Home() {
       </aside>
 
       {/* Main Area */}
-      <main className="flex-1 flex flex-col relative min-w-0">
+      <main className="y-main flex-1 flex flex-col relative min-w-0">
         {/* Mobile header */}
         <header className="flex items-center justify-between h-[52px] px-1.5 md:hidden border-b border-y-line">
           <div className="flex items-center gap-1 min-w-0">
             <button onClick={() => setSidebarOpen(true)} aria-label={t.openMenu} className={ICON_BTN}><Menu size={20} /></button>
-            <span className="font-bold text-[15px] truncate">{activeConv?.title ?? 'YamanAI'}</span>
+            <span className="y-display font-bold text-[15px] truncate">{activeConv?.title ?? 'YamanAI'}</span>
           </div>
           <div className="flex items-center flex-shrink-0">
             <a href="/hakkinda" aria-label={t.about} className={ICON_BTN}><Info size={18} /></a>
@@ -1461,13 +1510,13 @@ export default function Home() {
 
         {/* Desktop header bar */}
         <div className={`hidden md:flex items-center justify-between gap-4 h-14 pl-8 pr-5 flex-shrink-0 border-b transition-colors duration-150 ${isEmpty ? 'border-transparent' : 'border-y-line'}`}>
-          <span className="font-bold truncate">{isEmpty ? '' : activeConv?.title}</span>
+          <span className="y-display font-bold text-lg truncate">{isEmpty ? '' : activeConv?.title}</span>
           <div className="flex items-center gap-1 flex-shrink-0">
             {/* Model degistirici: girisliyse iki model arasinda gecer, degilse giris penceresini acar (GPT-4o giris ister) */}
             <button type="button" onClick={signedIn ? () => setSettings(s => ({ ...s, model: s.model === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o' })) : requireLogin}
               title={signedIn ? t.switchModel(MODEL_SHORT_MAP[effectiveModel === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o']) : t.modelLocked}
               aria-label={`${modelShort}. ${signedIn ? t.switchModel(MODEL_SHORT_MAP[effectiveModel === 'gpt-4o' ? 'gpt-4o-mini' : 'gpt-4o']) : t.modelLocked}`}
-              className="mr-1 min-h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-sm font-medium text-y-muted hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150">
+              className="y-model mr-1 min-h-9 px-3 inline-flex items-center gap-1.5 rounded-full border border-transparent text-sm font-medium text-y-muted hover:text-y-ink hover:bg-y-surface2 transition-colors duration-150">
               {modelShort}
               {signedIn ? <ChevronsUpDown size={14} aria-hidden="true" /> : <Lock size={12} aria-hidden="true" />}
             </button>
@@ -1477,10 +1526,13 @@ export default function Home() {
                 <span className={TOOLTIP_CLS} aria-hidden="true">{t.exportChat}</span>
               </button>
             )}
+            {/* Gece Bogaz'i her zaman gecedir: acik/koyu dugmesi orada bir sey degistirmez */}
+            {design === 'ebru' && (
             <button onClick={toggleTheme} aria-label={theme === 'dark' ? t.lightTheme : t.darkTheme} className={ICON_BTN}>
               {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
               <span className={TOOLTIP_CLS} aria-hidden="true">{theme === 'dark' ? t.lightTheme : t.darkTheme}</span>
             </button>
+            )}
             {/* Duz HTML sayfasi oldugu icin Link degil, normal baglanti */}
             <a href="/hakkinda" aria-label={t.about} className={ICON_BTN}>
               <Info size={18} />
@@ -1514,8 +1566,10 @@ export default function Home() {
         </div>
 
         {/* Ebru plate + composer */}
-        <div className={`y-plate-wrap absolute bottom-0 inset-x-0 z-10 pointer-events-none ${isEmpty ? 'h-[min(34dvh,300px)]' : 'h-[164px] md:h-[150px]'}`}>
-          <EbruPlate seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} theme={theme} />
+        <div className={`y-plate-wrap absolute bottom-0 inset-x-0 z-10 pointer-events-none ${isEmpty ? 'h-[min(34dvh,300px)]' : design === 'bogaz' ? 'h-[210px] md:h-[150px]' : 'h-[164px] md:h-[150px]'}`}>
+          {design === 'bogaz'
+            ? <BogazWater seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} />
+            : <EbruPlate seed={activeId || 'yamanai'} settled={Math.max(settledAnswers, 0)} streaming={streamingHere} theme={theme} />}
         </div>
 
         <div className="absolute bottom-0 inset-x-0 z-20 px-3 md:px-6 pb-3 pointer-events-none">
@@ -1567,7 +1621,7 @@ export default function Home() {
             {voiceAudio ? (
               <VoiceBar audio={voiceAudio} t={t} onTurn={sendMessage} stopTurn={stopGeneration} onEnd={endVoice} />
             ) : (
-            <div className="relative flex items-end bg-y-surface rounded-[28px] border border-y-line-strong focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
+            <div className="y-composer relative flex items-end bg-y-surface rounded-[28px] border border-y-line-strong focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-y-focus">
               <textarea ref={inputRef} id="composer"
                 aria-label={t.placeholder}
                 dir="auto"
@@ -1590,8 +1644,8 @@ export default function Home() {
                 title={loading ? t.stop : t.send}
                 aria-label={loading ? t.stop : t.send}
                 className={`y-hit absolute right-2 bottom-2 size-11 flex items-center justify-center rounded-full transition-colors duration-150 ${
-                  loading ? 'bg-y-bubble text-y-bubble-ink'
-                  : input.trim() && !exhausted && !tooLong ? 'bg-y-accent hover:bg-y-accent-hover text-white'
+                  loading ? 'bg-y-selected text-y-selected-ink'
+                  : input.trim() && !exhausted && !tooLong ? 'bg-y-accent hover:bg-y-accent-hover text-y-on-accent'
                   : 'bg-y-surface2 text-y-subtle cursor-not-allowed'}`}>
                 {loading ? <Square size={14} fill="currentColor" /> : <ArrowUp size={20} strokeWidth={2.5} />}
               </button>
@@ -1613,5 +1667,6 @@ export default function Home() {
       </main>
     </div>
     </GateContext.Provider>
+    </DesignContext.Provider>
   );
 }

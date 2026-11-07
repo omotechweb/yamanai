@@ -17,10 +17,14 @@
   --color-y-accent: var(--y-accent);
   --color-y-accent-hover: var(--y-accent-hover);
   --color-y-accent-ink: var(--y-accent-ink);
+  --color-y-on-accent: var(--y-on-accent);
   --color-y-link: var(--y-focus);
   --color-y-danger: var(--y-danger);
   --color-y-bubble: var(--y-bubble);
   --color-y-bubble-ink: var(--y-bubble-ink);
+  /* Secili kontrol (segment, kategori, durdur dugmesi) */
+  --color-y-selected: var(--y-selected, var(--y-bubble));
+  --color-y-selected-ink: var(--y-selected-ink, var(--y-bubble-ink));
 
   /* Kenar cubugu: acik temada koyu kagit, koyu temada lacivert */
   --color-y-side: var(--y-side);
@@ -35,6 +39,7 @@
 
 :root {
   --y-accent: #C8452F;
+  --y-on-accent: #FFFFFF;
   --y-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -90,6 +95,78 @@ html[data-theme='dark'] {
   --y-side-focus: #E9C46A;
 }
 
+
+/* ─── Tasarim 2: Gece Bogaz'i ───────────────────────────────────────────────
+   Her zaman gece: acik/koyu tema secimini yok sayar. Duzen ve bilesenler ayni,
+   yalnizca renk, yazi ve imza hareketi (suya vuran kopru isigi) degisir. */
+
+html[data-design='bogaz'][data-theme] {
+  color-scheme: dark;
+  --y-canvas: #070D1F;
+  --y-surface: #121D3B;
+  --y-surface2: #18254A;
+  --y-raised: #111B37;
+  --y-ink: #F2EEE4;
+  --y-muted: #A9B6D6;
+  --y-subtle: #8D9BC0;
+  --y-line: #1F2C50;
+  --y-line-strong: #33436F;
+  --y-accent: #E8B65A;
+  --y-accent-hover: #F0C673;
+  --y-accent-ink: #F3D59A;
+  --y-on-accent: #1A1406;
+  --y-danger: #F2876F;
+  --y-focus: #F3D59A;
+  --y-bubble: #16244A;
+  --y-bubble-ink: #F2EEE4;
+  /* Secili kontrol: koyu zemin ustunde gorunsun diye acik yuzey ve altin yazi */
+  --y-selected: #2C3D6E;
+  --y-selected-ink: #F3D59A;
+  /* Damla logo gece paletinde: altin dis halka, gece bosluk, sis mavisi, altin cekirdek */
+  --y-logo-1: #E8B65A;
+  --y-logo-2: #0B142B;
+  --y-logo-3: #9FB3D9;
+  --y-logo-4: #F3D59A;
+  --y-side: #0B142B;
+  --y-side-ink: #F2EEE4;
+  --y-side-muted: #8D9BC0;
+  --y-side-line: #1F2C50;
+  --y-side-hover: #121D3B;
+  --y-side-active: #17244A;
+  --y-side-focus: #F3D59A;
+}
+
+/* next/font degiskeni body'de tanimlanir; daha ozgul secici onu ezer */
+html[data-design='bogaz'] body {
+  --font-ui: var(--font-bogaz-ui);
+  --y-display-font: var(--font-bogaz-display), Georgia, serif;
+  background: #070D1F;
+}
+
+html[data-design='bogaz'] ::selection { background: #E8B65A; color: #0B142B; }
+
+/* Baslik yuzu: Bodoni yuksek kontrastli, agirlik yerine boyutla konusur */
+html[data-design='bogaz'] .y-display {
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* Kullanici baloncugu ve kod: gece yuzeyleri, ince kilcizgi */
+html[data-design='bogaz'] .y-bubble-user { border: 1px solid #23305A; }
+html[data-design='bogaz'] .y-code { background: #050A18; border: 1px solid #1F2C50; }
+
+/* Yazi kutusu suyun ustunde yuzer */
+html[data-design='bogaz'] .y-composer {
+  background: rgb(18 29 59 / 0.94);
+  border-color: #2A3964;
+  box-shadow: 0 18px 40px rgb(0 0 0 / 0.45);
+}
+
+/* Isik bandi: uste dogru geceye karisir */
+.y-water {
+  -webkit-mask-image: linear-gradient(to top, #000 70%, transparent);
+  mask-image: linear-gradient(to top, #000 70%, transparent);
+}
 body {
   background: var(--y-canvas);
   color: var(--y-ink);
@@ -193,4 +270,41 @@ body {
   .y-panel, .y-backdrop { animation: y-fade 120ms ease-out backwards; }
   .y-drop { animation: none; transform: scale(0.7); opacity: 0.7; }
   .y-plate-wrap { transition: none; }
+}
+
+/* Baslik sesi: Ebru'da arayuz yazisi (miras), Gece Bogaz'inda Bodoni */
+.y-display { font-family: var(--y-display-font, inherit); }
+
+/* Tasarim 1 (Ebru): yazi kutusu murekkep bandinin ustunde yuzer; tek yumusak golge */
+html[data-design='ebru'] .y-composer {
+  box-shadow: 0 10px 30px rgb(7 12 30 / 0.16), 0 1px 2px rgb(7 12 30 / 0.08);
+}
+html[data-design='ebru'][data-theme='dark'] .y-composer {
+  box-shadow: 0 14px 34px rgb(0 0 0 / 0.4);
+}
+
+/* Gece Bogaz'i: suyun alttan aydinlandigi derinlik; yazi kutusu bandi isikli suyun ustunde durur */
+html[data-design='bogaz'] .y-main {
+  background: radial-gradient(120% 75% at 50% 105%, #13254A 0%, #0B1630 45%, #070D1F 80%);
+}
+
+/* Yanit sicak isikta okunur: vurgular altin tonunda */
+html[data-design='bogaz'] .y-prose strong { color: #F3D59A; font-weight: 600; }
+
+/* Ust cubuktaki model secici bir hap */
+html[data-design='bogaz'] .y-model {
+  color: #F3D59A;
+  font-weight: 600;
+  border-color: #3A3320;
+  background: rgb(232 182 90 / 0.06);
+  padding-inline: 14px;
+}
+html[data-design='bogaz'] .y-model:hover { background: rgb(232 182 90 / 0.12); color: #F7E2B5; }
+
+/* Tasarim degisirken renkler 350 ms'de donusur; yalnizca degisim aninda eklenen sinifla */
+html.y-design-switch *,
+html.y-design-switch *::before,
+html.y-design-switch *::after {
+  transition: background-color 350ms var(--y-ease-out), color 350ms var(--y-ease-out),
+    border-color 350ms var(--y-ease-out), fill 350ms var(--y-ease-out) !important;
 }

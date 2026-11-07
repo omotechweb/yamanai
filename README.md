@@ -37,6 +37,7 @@ npm run build      # üretim derlemesi
 ## Yapı
 
 - `src/app/page.tsx`: sohbet ekranı
+- İki tasarım: **Ebru** (varsayılan, `src/components/EbruPlate.tsx`) ve **Gece Boğazı** (yalnızca giriş yapanlar Ayarlar → Tasarım'dan seçer; `html[data-design="bogaz"]` renk tokenları `src/app/globals.css`, su yansıması `src/components/BogazWater.tsx`). Tasarım kuralları `DESIGN.md`'de.
 - `src/lib/chat.ts`: sohbet verisi, içe aktarma, geçmiş kırpma gibi React'ten bağımsız yardımcılar (testli)
 - `src/lib/strings.ts`: Türkçe ve İngilizce arayüz metinleri; `src/lib/i18n.ts` dil seçimini yapar
 - `src/app/api/chat/route.ts`: OpenAI akışı, günlük limit ve hız sınırı

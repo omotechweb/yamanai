@@ -62,13 +62,13 @@ function GirisForm() {
       <div className="bg-y-side text-y-side-ink px-6 py-5 md:w-[288px] md:flex-shrink-0">
         <Link href="/" tabIndex={isDesktopApp ? -1 : undefined} className={`inline-flex items-center gap-2.5 min-h-11 rounded-lg y-on-side ${isDesktopApp ? 'pointer-events-none' : ''}`}>
           <LogoMark size={30} />
-          <span className="font-extrabold text-xl tracking-tight">YamanAI</span>
+          <span className="y-display font-extrabold text-xl tracking-tight">YamanAI</span>
         </Link>
       </div>
 
       <main className="flex-1 flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
-          <h1 className="text-3xl font-bold tracking-tight">{t.loginHeading}</h1>
+          <h1 className="y-display text-3xl font-bold tracking-tight">{t.loginHeading}</h1>
           <p className="text-y-muted mt-2 mb-7 leading-relaxed">{isDesktopApp ? t.loginSubDesktop : t.loginSub}</p>
 
           {errorMessage && (

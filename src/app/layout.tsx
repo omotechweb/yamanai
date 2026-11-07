@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Atkinson_Hyperlegible_Next, JetBrains_Mono } from 'next/font/google';
+import { Atkinson_Hyperlegible_Next, Bodoni_Moda, JetBrains_Mono, Manrope } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from '@/lib/site';
@@ -8,6 +8,20 @@ import { SITE_DESCRIPTION, SITE_NAME, SITE_TITLE, SITE_URL } from '@/lib/site';
 const uiFont = Atkinson_Hyperlegible_Next({
   variable: '--font-ui',
   subsets: ['latin', 'latin-ext'],
+});
+
+// Tasarim 2 (Gece Bogaz'i) yuzleri; yalnizca o tasarim secilince kullanilir, preload edilmez
+const bogazDisplay = Bodoni_Moda({
+  variable: '--font-bogaz-display',
+  subsets: ['latin', 'latin-ext'],
+  weight: '500',
+  preload: false,
+});
+
+const bogazUi = Manrope({
+  variable: '--font-bogaz-ui',
+  subsets: ['latin', 'latin-ext'],
+  preload: false,
 });
 
 const codeFont = JetBrains_Mono({
@@ -63,9 +77,11 @@ export const viewport: Viewport = {
   ],
 };
 
-// Ilk boyamadan once tema ve dili ayarla, boylece ekran yanip sonmez
+// Ilk boyamadan once tema, tasarim ve dili ayarla, boylece ekran yanip sonmez.
+// Gece Bogaz'i yalnizca girisli kullanicilar icin: giris durumu sayfa tarafindan yamanai_signed_in ile tutulur.
 const PREFS_SCRIPT = `(function(){var s={};try{s=JSON.parse(localStorage.getItem('yamanai_settings')||'{}')}catch(e){}
 var d=document.documentElement;d.dataset.theme=(s.theme==='dark'||s.theme==='light')?s.theme:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+var g=false;try{g=localStorage.getItem('yamanai_signed_in')==='1'}catch(e){}d.dataset.design=(g&&s.design==='bogaz')?'bogaz':'ebru';
 var l=s.language;if(!l||l==='auto')l=(navigator.language||'').toLowerCase().indexOf('tr')===0?'tr':'en';d.lang=l})()`;
 
 export default function RootLayout({
@@ -74,12 +90,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="tr" data-theme="light" suppressHydrationWarning>
+    <html lang="tr" data-theme="light" data-design="ebru" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: PREFS_SCRIPT }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }} />
       </head>
-      <body className={`${uiFont.variable} ${codeFont.variable} antialiased`}>
+      <body className={`${uiFont.variable} ${codeFont.variable} ${bogazDisplay.variable} ${bogazUi.variable} antialiased`}>
         <Providers>{children}</Providers>
       </body>
     </html>

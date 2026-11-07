@@ -79,7 +79,7 @@ export default function SSSPage() {
         <div className="max-w-[1120px] mx-auto h-14 px-4 sm:px-6 flex items-center justify-between gap-3">
           <Link href="/" className="inline-flex items-center gap-2.5 min-h-11 rounded-lg">
             <LogoMark size={26} />
-            <span className="font-extrabold text-lg tracking-tight">YamanAI</span>
+            <span className="y-display font-extrabold text-lg tracking-tight">YamanAI</span>
           </Link>
           <Link href="/" className="inline-flex items-center gap-2 min-h-11 px-3 text-sm font-semibold rounded-full hover:bg-y-side-hover transition-colors duration-150">
             <ArrowLeft size={16} /> {t.sssBack}
@@ -89,7 +89,7 @@ export default function SSSPage() {
 
       <main className="max-w-[1120px] mx-auto px-4 sm:px-6 pt-10 lg:pt-16 lg:grid lg:grid-cols-12 lg:gap-16">
         <div className="lg:col-span-5 lg:self-start lg:sticky lg:top-10">
-          <h1 className="text-4xl lg:text-5xl font-bold tracking-[-0.02em] leading-[1.08] text-balance">{t.sssHeading}</h1>
+          <h1 className="y-display text-4xl lg:text-5xl font-bold tracking-[-0.02em] leading-[1.08] text-balance">{t.sssHeading}</h1>
           <p className="mt-4 leading-relaxed max-w-[42ch] text-y-muted">{t.sssSub}</p>
 
           <div className="relative mt-7">
@@ -114,7 +114,7 @@ export default function SSSPage() {
               return (
                 <button key={key} type="button" aria-pressed={active} onClick={() => setCategory(key)}
                   className={`min-h-10 px-4 rounded-full border text-sm font-semibold transition-colors duration-150 ${
-                    active ? 'bg-y-bubble border-y-bubble text-y-bubble-ink' : 'border-y-line-strong text-y-ink hover:bg-y-surface2'}`}>
+                    active ? 'bg-y-selected border-y-selected text-y-selected-ink' : 'border-y-line-strong text-y-ink hover:bg-y-surface2'}`}>
                   {key === 'all' ? t.sssAll : t.sssCategories[key]}
                 </button>
               );
@@ -137,7 +137,7 @@ export default function SSSPage() {
             <div className="py-16 text-center border-y border-y-line">
               <p className="text-y-muted">{t.sssNone(query.trim() || (category === 'all' ? t.sssAll : t.sssCategories[category]))}</p>
               <button type="button" onClick={reset}
-                className="mt-4 min-h-11 px-5 rounded-full text-sm font-semibold bg-y-accent hover:bg-y-accent-hover text-white transition-colors duration-150">
+                className="mt-4 min-h-11 px-5 rounded-full text-sm font-semibold bg-y-accent hover:bg-y-accent-hover text-y-on-accent transition-colors duration-150">
                 {t.sssClear}
               </button>
             </div>
@@ -148,7 +148,7 @@ export default function SSSPage() {
               <span className="block text-lg font-semibold">{t.sssStillTitle}</span>
               <span className="block text-y-muted mt-0.5">{t.sssStillBody}</span>
             </span>
-            <span aria-hidden className="size-11 rounded-full bg-y-accent group-hover:bg-y-accent-hover text-white flex items-center justify-center flex-shrink-0 transition-colors duration-150">
+            <span aria-hidden className="size-11 rounded-full bg-y-accent group-hover:bg-y-accent-hover text-y-on-accent flex items-center justify-center flex-shrink-0 transition-colors duration-150">
               <ArrowRight size={18} />
             </span>
           </Link>
@@ -163,7 +163,7 @@ export default function SSSPage() {
               <p className="mt-3 max-w-[55ch] leading-relaxed text-y-side-muted">{t.sssDesktopBody}</p>
             </div>
             <a href={DOWNLOAD_URL} download
-              className="inline-flex items-center justify-center gap-2.5 min-h-12 px-6 self-start lg:self-auto flex-shrink-0 rounded-full bg-y-accent hover:bg-y-accent-hover text-white font-semibold transition-colors duration-150">
+              className="inline-flex items-center justify-center gap-2.5 min-h-12 px-6 self-start lg:self-auto flex-shrink-0 rounded-full bg-y-accent hover:bg-y-accent-hover text-y-on-accent font-semibold transition-colors duration-150">
               <MonitorDown size={18} /> {t.desktopDownload}
             </a>
           </div>

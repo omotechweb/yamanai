@@ -43,8 +43,23 @@ const evaluate = async (fn) => {
   return res.result?.result?.value;
 };
 
+// Girisli gorunumu sinamak icin oturum istegi tarayicida sahte bir yanitla karsilanir.
+// Sunucu bunu bilmez: limitler ve modeller yine misafir kurallariyla calisir, yalnizca arayuz girisli gorunur.
+let fakeSession = false;
+const FAKE_USER = { user: { name: 'Test Kullanici', email: 'test@example.com' }, expires: '2099-01-01T00:00:00.000Z' };
+ws.addEventListener('message', e => {
+  const m = JSON.parse(e.data);
+  if (m.method !== 'Fetch.requestPaused') return;
+  const { requestId } = m.params;
+  if (fakeSession) {
+    send('Fetch.fulfillRequest', { requestId, responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(JSON.stringify(FAKE_USER)).toString('base64') });
+  } else send('Fetch.continueRequest', { requestId });
+});
+await send('Fetch.enable', { patterns: [{ urlPattern: '*/api/auth/session*' }] });
+
 /** Her test temiz bir sayfayla, verilen localStorage ile baslar. */
-async function openWith(storage, width = 1366) {
+async function openWith(storage, width = 1366, { signedIn = false } = {}) {
+  fakeSession = signedIn;
   await send('Emulation.setDeviceMetricsOverride', { width, height: 860, deviceScaleFactor: 1, mobile: width < 768 });
   await send('Page.navigate', { url: `${BASE}/robots.txt` });
   await sleep(500);
@@ -169,6 +184,40 @@ const tests = {
       document.querySelector('[aria-label^="GPT-4o Mini."]').click(); await wait(300);
       const title = document.querySelector('[role=dialog] h2')?.textContent;
       if (title !== 'Giriş yap, daha fazlasını aç') throw new Error('giris penceresi acilmadi: ' + title);
+    }`);
+  },
+  async 'girissiz kullanici Gece Bogazi kayitli olsa da Ebru gorur, secince giris istenir'() {
+    await openWith({ ...SEED, yamanai_signed_in: '1', yamanai_settings: JSON.stringify({ language: 'tr', design: 'bogaz' }) });
+    return evaluate(`async () => { ${HELPERS}
+      await wait(800);
+      if (document.documentElement.dataset.design !== 'ebru') throw new Error('tasarim: ' + document.documentElement.dataset.design);
+      if (localStorage.getItem('yamanai_signed_in') !== '0') throw new Error('giris bayragi sifirlanmadi');
+      document.querySelector('[aria-label="Ayarlar"]').click(); await wait(300);
+      const locked = [...document.querySelectorAll('[role=radiogroup][aria-label="Tasarım"] [role=radio]')].find(b => b.textContent.includes('Gece'));
+      locked.click(); await wait(300);
+      const title = document.querySelector('[role=dialog] h2')?.textContent;
+      if (title !== 'Giriş yap, daha fazlasını aç') throw new Error('giris penceresi acilmadi: ' + title);
+    }`);
+  },
+  async 'girisli kullanici Gece Bogazina gecer, secim kalici olur, geri doner'() {
+    await openWith(SEED, 1366, { signedIn: true });
+    return evaluate(`async () => { ${HELPERS}
+      await wait(600);
+      const pick = async (name) => {
+        document.querySelector('[aria-label="Ayarlar"]').click(); await wait(300);
+        [...document.querySelectorAll('[role=radiogroup][aria-label="Tasarım"] [role=radio]')].find(b => b.textContent.includes(name)).click(); await wait(100);
+        byText('Kaydet').click(); await wait(500);
+      };
+      await pick('Gece');
+      const root = document.documentElement;
+      if (root.dataset.design !== 'bogaz') throw new Error('Gece Bogazina gecilmedi: ' + root.dataset.design);
+      if (!document.querySelector('canvas.y-water')) throw new Error('su yansimasi yok');
+      if (document.querySelector('[aria-label="Koyu tema"], [aria-label="Açık tema"]')) throw new Error('Gece Bogazinda tema dugmesi gorunmemeli');
+      if (getComputedStyle(document.body).backgroundColor !== 'rgb(7, 13, 31)') throw new Error('gece zemini uygulanmadi: ' + getComputedStyle(document.body).backgroundColor);
+      if (localStorage.getItem('yamanai_signed_in') !== '1') throw new Error('giris bayragi yazilmadi');
+      await pick('Ebru');
+      if (root.dataset.design !== 'ebru') throw new Error('Ebru ya donulmedi');
+      if (JSON.parse(localStorage.getItem('yamanai_settings')).design !== 'ebru') throw new Error('secim kaydedilmedi');
     }`);
   },
   async 'telefonda yatay tasma yok'() {

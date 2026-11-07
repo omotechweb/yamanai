@@ -8,10 +8,11 @@ const TEAR = 'M12 1.5c4.6 5.2 8.5 9.4 8.5 13.6a8.5 8.5 0 0 1-17 0C3.5 10.9 7.4 6
 /** The YamanAI mark: rings of ink pulled to a point by a single tine stroke. */
 export const LogoMark = memo(({ size = 32, className = '' }: { size?: number; className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className={`flex-shrink-0 ${className}`}>
-    <path d={TEAR} fill="#C8452F" />
-    <path d={TEAR} fill="#F4F1EA" transform="translate(12 16) scale(.72) translate(-12 -16)" />
-    <path d={TEAR} fill="#D9A441" transform="translate(12 16) scale(.5) translate(-12 -16)" />
-    <path d={TEAR} fill="#101B3D" transform="translate(12 16) scale(.26) translate(-12 -16)" />
+    {/* Renkler tasarima gore: Ebru'da kok boya, Gece Bogaz'inda altin ve sis mavisi (globals.css) */}
+    <path d={TEAR} style={{ fill: 'var(--y-logo-1, #C8452F)' }} />
+    <path d={TEAR} style={{ fill: 'var(--y-logo-2, #F4F1EA)' }} transform="translate(12 16) scale(.72) translate(-12 -16)" />
+    <path d={TEAR} style={{ fill: 'var(--y-logo-3, #D9A441)' }} transform="translate(12 16) scale(.5) translate(-12 -16)" />
+    <path d={TEAR} style={{ fill: 'var(--y-logo-4, #101B3D)' }} transform="translate(12 16) scale(.26) translate(-12 -16)" />
   </svg>
 ));
 LogoMark.displayName = 'LogoMark';
